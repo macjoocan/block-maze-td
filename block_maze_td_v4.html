@@ -6,16 +6,16 @@
 <title>BLOCK MAZE — 코어 디펜스 v0.4</title>
 <style>
   :root{
-    --bg:#0d1117; --panel:#161b22; --line:#21262d;
-    --grid:#1c2330; --grid-line:#2a3340;
-    --ink:#e6edf3; --muted:#7d8590;
-    --wall:#3b4252; --wall-top:#4c566a;
-    --turret:#58a6ff; --turret-core:#a5d6ff;
-    --core:#e3b341; --core-edge:#ffd866;
-    --enemy:#f0883e; --enemy-edge:#ffb77c;
-    --gold:#e3b341; --range:rgba(88,166,255,.10);
-    --hp:#3fb950; --hplow:#f85149;
-    --accent:#bc8cff;
+    --bg:#140b2b; --panel:#1e1440; --line:#312456;
+    --grid:#241a44; --grid-line:#33265e;
+    --ink:#ece7ff; --muted:#9a8fce;
+    --wall:#5a4a8f; --wall-top:#7d6bc0;
+    --turret:#5ce1e6; --turret-core:#b8f6f8;
+    --core:#7cf0ff; --core-edge:#d8ffff;
+    --enemy:#c56bff; --enemy-edge:#e6b8ff;
+    --gold:#f2c14e; --range:rgba(92,225,230,.10);
+    --hp:#5ce1e6; --hplow:#ff5d8a;
+    --accent:#c56bff;
     --font:'DM Mono',ui-monospace,'SFMono-Regular',Menlo,monospace;
   }
   @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Bebas+Neue&display=swap');
@@ -63,7 +63,7 @@
   .mode-btn.on{background:rgba(88,166,255,.15);border-color:var(--turret);color:var(--turret-core)}
   .mode-btn .sub{display:block;font-size:9px;color:var(--muted);margin-top:2px;letter-spacing:.04em}
   .mode-btn.on .sub{color:var(--turret)}
-  .go{width:100%;background:linear-gradient(100deg,#2ea043,#3fb950);color:#04150a;border:none;border-radius:8px;padding:13px;font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.08em;cursor:pointer;transition:.12s}
+  .go{width:100%;background:linear-gradient(100deg,#7c3aed,#5ce1e6);color:#0a0620;border:none;border-radius:8px;padding:13px;font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.08em;cursor:pointer;transition:.12s}
   .go:hover{filter:brightness(1.08)}
   .go:disabled{opacity:.4;cursor:not-allowed;filter:none}
   .hint{font-size:11px;color:var(--muted);line-height:1.7}
@@ -117,15 +117,16 @@
     <div class="card">
       <h2>모드</h2>
       <div class="mode-row">
-        <button class="mode-btn on" id="m-build" data-mode="build">건설·보수<span class="sub">조각 배치</span></button>
-        <button class="mode-btn" id="m-repair" data-mode="repair">수리<span class="sub">벽10·코어15골드</span></button>
+        <button class="mode-btn on" id="m-build" data-mode="build">건설<span class="sub">조각 배치</span></button>
+        <button class="mode-btn" id="m-repair" data-mode="repair">수리<span class="sub">벽10·코어15</span></button>
+        <button class="mode-btn" id="m-merge" data-mode="merge">재결합<span class="sub">20골드</span></button>
       </div>
     </div>
 
     <div class="card">
       <button class="go" id="go">웨이브 시작</button>
       <p class="hint" style="margin-top:11px">
-        웨이브 <b class="k">사이</b>엔 자유 건설, 전투 <b class="k">중</b>엔 조각으로 구멍 메우기·<b class="g">골드 수리</b>. <b>2×2</b>를 채우면 <b class="k">중포탑</b>으로 머지(스플래시). 1칸이라도 깨지면 일반 타일로 풀리니, 그 칸을 다시 채워 <b class="k">재머지</b>. 코어 HP 0이면 게임오버.
+        웨이브 <b class="k">사이</b>엔 자유 건설, 전투 <b class="k">중</b>엔 조각으로 구멍 메우기·<b class="g">골드 수리</b>. <b>2×2</b>=중포탑(스플래시), <b>일직선 4칸+</b>=<b class="k">관통 라인</b>. 1칸이라도 깨지면 일반 타일로 풀리니 다시 채워 <b class="k">재머지</b>. 코어 HP 0이면 게임오버.
       </p>
     </div>
   </div>
@@ -160,6 +161,7 @@ const TURRET_RANGE=2.4, TURRET_DMG=2, TURRET_CD=720;   // ms
 const MERGE2_DMG=5, MERGE2_RANGE=3.0, MERGE2_CD=640, MERGE2_SPLASH=0.85;
 const REPAIR_COST=10, REPAIR_AMT=12;
 const CORE_REPAIR_COST=15, CORE_REPAIR_AMT=6;          // 코어 수리
+const MERGE_COST=20;                                   // 흩어진 완전 패턴을 골드로 재결합
 const WALL_DIG_BASE=2, WALL_DIG_HPDIV=12;              // 굴착 비용 = base + ceil(hp/div) (낮을수록 벽 공략 적극적)
 const MERGE_AGGRO=0.5;                                 // 머지 2x2 경로 비용(열린 땅<1보다 낮음) → 적이 몰려들어 공략
 const SPAWN_MIN=240, SPAWN_MAX=560;   // 불규칙 스폰 간격(ms)
@@ -267,50 +269,80 @@ function repairAt(gx,gy){
 }
 function destroyCell(x,y){delete cells[key(x,y)];grid[y][x]=EMPTY;computeField();}
 
-// ── 2x2 머지 (놓을 때만·주변만·우선순위·claim·1패스) ──
-function formMerge2x2(quad){
-  const tx=quad[0][0],ty=quad[0][1];
-  const m={tx,ty,cx:tx+1,cy:ty+1,cells:quad.map(q=>[q[0],q[1]]),cd:0,type:'sq2'};
+// ── 머지 (놓을 때만·주변만·우선순위 2x2 > 라인·claim·1패스) ──
+const LINE_LEN=4, LINE_DMG=4, LINE_RANGE=3.2, LINE_CD=620, LINE_PIERCE_W=0.55;
+
+// 공용 감지: seeds 주변에서 형성 가능한 유닛 목록 반환 (isWall/isMerged 주입)
+function detectUnits(seeds, isWall, isMerged){
+  const claimed=new Set(), units=[];
+  const inb=(x,y)=>x>=0&&x<COLS&&y>=0&&y<ROWS;
+  // 1) 2x2 (우선)
+  const cset=new Set(), corners=[];
+  for(const [sx,sy] of seeds) for(const [ox,oy] of [[-1,-1],[0,-1],[-1,0],[0,0]]){
+    const k=(sx+ox)+','+(sy+oy); if(!cset.has(k)){cset.add(k);corners.push([sx+ox,sy+oy]);}
+  }
+  corners.sort((a,b)=>a[1]-b[1]||a[0]-b[0]);
+  for(const [x,y] of corners){
+    const quad=[[x,y],[x+1,y],[x,y+1],[x+1,y+1]];
+    if(quad.some(([qx,qy])=>!inb(qx,qy)||!isWall(qx,qy)||isMerged(qx,qy)||claimed.has(qx+','+qy)))continue;
+    units.push({type:'sq2',cells:quad.map(q=>[q[0],q[1]])});
+    quad.forEach(([qx,qy])=>claimed.add(qx+','+qy));
+  }
+  // 2) 라인 (연속 ≥ LINE_LEN)
+  const elig=(x,y)=>inb(x,y)&&isWall(x,y)&&!isMerged(x,y)&&!claimed.has(x+','+y);
+  for(const [sx,sy] of seeds){
+    if(!elig(sx,sy))continue;
+    for(const [dx,dy] of [[1,0],[0,1]]){
+      let x=sx,y=sy;
+      while(elig(x-dx,y-dy)){x-=dx;y-=dy;}
+      const run=[];let cx=x,cy=y;
+      while(elig(cx,cy)){run.push([cx,cy]);cx+=dx;cy+=dy;}
+      if(run.length>=LINE_LEN){
+        units.push({type:'line',dir:dx?'h':'v',cells:run.map(c=>[c[0],c[1]])});
+        run.forEach(([rx,ry])=>claimed.add(rx+','+ry));
+      }
+    }
+  }
+  return units;
+}
+function formUnit(u){
+  let m;
+  if(u.type==='sq2'){const tx=u.cells[0][0],ty=u.cells[0][1];m={type:'sq2',tx,ty,cx:tx+1,cy:ty+1,cells:u.cells.map(c=>[c[0],c[1]]),cd:0};}
+  else{m={type:'line',dir:u.dir,cells:u.cells.map(c=>[c[0],c[1]]),cd:0};}
   merges.push(m);
-  quad.forEach(([x,y])=>{const c=cells[key(x,y)]||{hp:BLOCK_HP,max:BLOCK_HP,cd:0};c.merge=m;cells[key(x,y)]=c;});
+  m.cells.forEach(([x,y])=>{const c=cells[key(x,y)]||{hp:BLOCK_HP,max:BLOCK_HP,cd:0};c.merge=m;cells[key(x,y)]=c;});
 }
 function checkMerges(newCells){
-  const corners=new Set();
-  for(const [x,y] of newCells) for(const [ox,oy] of [[-1,-1],[0,-1],[-1,0],[0,0]]) corners.add((x+ox)+','+(y+oy));
-  const sorted=[...corners].map(s=>s.split(',').map(Number)).sort((a,b)=>a[1]-b[1]||a[0]-b[0]);
-  const claimed=new Set();
-  for(const [x,y] of sorted){
-    const quad=[[x,y],[x+1,y],[x,y+1],[x+1,y+1]];
-    if(quad.some(([qx,qy])=>qx<0||qx>=COLS||qy<0||qy>=ROWS))continue;
-    if(quad.some(([qx,qy])=>grid[qy][qx]!==WALL))continue;            // 4칸 모두 벽
-    if(quad.some(([qx,qy])=>{const c=cells[key(qx,qy)];return c&&c.merge;}))continue; // 이미 머지된 칸 없음
-    if(quad.some(([qx,qy])=>claimed.has(key(qx,qy))))continue;        // 이번 판정에서 claim 안 됨
-    formMerge2x2(quad);
-    quad.forEach(([qx,qy])=>claimed.add(key(qx,qy)));
-  }
+  const isWall=(x,y)=>grid[y][x]===WALL;
+  const isMerged=(x,y)=>{const c=cells[key(x,y)];return c&&c.merge;};
+  for(const u of detectUnits(newCells,isWall,isMerged)) formUnit(u);
 }
 function dissolveMerge(m){       // 머지 해제 → 남은 칸은 일반 타일로 복귀
   for(const [x,y] of m.cells){const c=cells[key(x,y)];if(c)delete c.merge;}
   const i=merges.indexOf(m);if(i>=0)merges.splice(i,1);
 }
-function previewMergeQuads(mat,gx,gy){
+// 흩어진 완전 패턴 재결합(골드): 해당 칸이 이미 완전한 2x2/라인을 이루면 유닛 반환
+function reformUnitAt(gx,gy){
+  if(gx<0||gx>=COLS||gy<0||gy>=ROWS||grid[gy][gx]!==WALL)return null;
+  const c=cells[key(gx,gy)];if(c&&c.merge)return null;         // 이미 머지됨
+  const isWall=(x,y)=>grid[y][x]===WALL;
+  const isMerged=(x,y)=>{const cc=cells[key(x,y)];return cc&&cc.merge;};
+  const units=detectUnits([[gx,gy]],isWall,isMerged);
+  return units.find(u=>u.cells.some(([x,y])=>x===gx&&y===gy))||null;
+}
+function doReform(gx,gy){
+  const u=reformUnitAt(gx,gy);
+  if(!u||state.gold<MERGE_COST)return false;
+  state.gold-=MERGE_COST;formUnit(u);computeField();updateStats();return true;
+}
+// 미리보기용: 놓으면 형성될 유닛들
+function previewUnits(mat,gx,gy){
   const ghost=new Set();
-  for(let y=0;y<mat.length;y++)for(let x=0;x<mat[0].length;x++)if(mat[y][x])ghost.add(key(gx+x,gy+y));
-  const isWall=(x,y)=>(x>=0&&x<COLS&&y>=0&&y<ROWS)&&(ghost.has(key(x,y))||grid[y][x]===WALL);
-  const merged=(x,y)=>{const c=cells[key(x,y)];return c&&c.merge;};
-  const corners=new Set();
-  for(const g of ghost){const p=g.split(',').map(Number);for(const [ox,oy] of [[-1,-1],[0,-1],[-1,0],[0,0]])corners.add((p[0]+ox)+','+(p[1]+oy));}
-  const sorted=[...corners].map(s=>s.split(',').map(Number)).sort((a,b)=>a[1]-b[1]||a[0]-b[0]);
-  const res=[],claimed=new Set();
-  for(const [x,y] of sorted){
-    const quad=[[x,y],[x+1,y],[x,y+1],[x+1,y+1]];
-    if(quad.some(([qx,qy])=>!isWall(qx,qy)))continue;
-    if(quad.some(([qx,qy])=>merged(qx,qy)))continue;
-    if(quad.some(([qx,qy])=>claimed.has(key(qx,qy))))continue;
-    if(!quad.some(([qx,qy])=>ghost.has(key(qx,qy))))continue;         // 새 칸 포함해야
-    res.push([x,y]);quad.forEach(([qx,qy])=>claimed.add(key(qx,qy)));
-  }
-  return res;
+  for(let y=0;y<mat.length;y++)for(let x=0;x<mat[0].length;x++)if(mat[y][x])ghost.add((gx+x)+','+(gy+y));
+  const isWall=(x,y)=>ghost.has(x+','+y)||(x>=0&&x<COLS&&y>=0&&y<ROWS&&grid[y][x]===WALL);
+  const isMerged=(x,y)=>{const c=cells[key(x,y)];return c&&c.merge;};
+  const seeds=[...ghost].map(s=>s.split(',').map(Number));
+  return detectUnits(seeds,isWall,isMerged);
 }
 
 // ── 적 ──
@@ -351,8 +383,8 @@ function endWave(){
 }
 
 // ── 루프 ──
-let last=0;
-function loop(ts){const dt=Math.min(40,ts-last);last=ts;if(state.running)step(dt);draw();requestAnimationFrame(loop);}
+let last=0, clock=0;
+function loop(ts){const dt=Math.min(40,ts-last);last=ts;clock=ts;if(state.running)step(dt);draw();requestAnimationFrame(loop);}
 
 function step(dt){
   // 스폰(불규칙 간격 + 가끔 다른 방향에서 동시 2마리)
@@ -418,19 +450,36 @@ function step(dt){
     }
     if(best){best.hp-=TURRET_DMG;c.cd=TURRET_CD;state.shots.push({fx:(bx+0.5)*CELL,fy:(by+0.5)*CELL,tx:best.px,ty:best.py,t:110});}
   }
-  // 중포탑 사격 (머지 유닛, 스플래시)
+  // 머지 유닛 사격
   for(const m of merges){
     m.cd-=dt;if(m.cd>0)continue;
-    let best=null,bestScore=Infinity;
-    for(const e of state.enemies){
-      const d=Math.hypot(e.px/CELL-m.cx,e.py/CELL-m.cy);
-      if(d<=MERGE2_RANGE){const sc=field.dist[e.cy][e.cx];if(sc<bestScore){bestScore=sc;best=e;}}
-    }
-    if(best){
-      best.hp-=MERGE2_DMG;
-      for(const e2 of state.enemies){if(e2===best)continue;const d=Math.hypot(e2.px-best.px,e2.py-best.py)/CELL;if(d<=MERGE2_SPLASH)e2.hp-=MERGE2_DMG*0.6;}
-      m.cd=MERGE2_CD;
-      state.shots.push({fx:m.cx*CELL,fy:m.cy*CELL,tx:best.px,ty:best.py,t:130,big:true});
+    if(m.type==='line'){
+      // 관통 라인: 라인 셀 중 아무 곳 사거리 내 최근접(코어기준) 적을 향해 관통 사격
+      let best=null,bestScore=Infinity,ox=0,oy=0;
+      for(const [lx,ly] of m.cells){const ccx=lx+0.5,ccy=ly+0.5;
+        for(const e of state.enemies){const d=Math.hypot(e.px/CELL-ccx,e.py/CELL-ccy);
+          if(d<=LINE_RANGE){const sc=field.dist[e.cy][e.cx];if(sc<bestScore){bestScore=sc;best=e;ox=ccx*CELL;oy=ccy*CELL;}}}}
+      if(best){
+        const ddx=best.px-ox,ddy=best.py-oy,len=Math.hypot(ddx,ddy)||1,nx=ddx/len,ny=ddy/len;
+        for(const e of state.enemies){const rx=e.px-ox,ry=e.py-oy;const proj=rx*nx+ry*ny;
+          if(proj<-6)continue;const perp=Math.abs(-rx*ny+ry*nx)/CELL;
+          if(perp<=LINE_PIERCE_W&&proj<=(LINE_RANGE+1.5)*CELL)e.hp-=LINE_DMG;}
+        m.cd=LINE_CD;
+        state.shots.push({fx:ox,fy:oy,tx:ox+nx*(LINE_RANGE+2)*CELL,ty:oy+ny*(LINE_RANGE+2)*CELL,t:150,line:true});
+      }
+    } else {
+      // 중포탑(2x2): 스플래시
+      let best=null,bestScore=Infinity;
+      for(const e of state.enemies){
+        const d=Math.hypot(e.px/CELL-m.cx,e.py/CELL-m.cy);
+        if(d<=MERGE2_RANGE){const sc=field.dist[e.cy][e.cx];if(sc<bestScore){bestScore=sc;best=e;}}
+      }
+      if(best){
+        best.hp-=MERGE2_DMG;
+        for(const e2 of state.enemies){if(e2===best)continue;const d=Math.hypot(e2.px-best.px,e2.py-best.py)/CELL;if(d<=MERGE2_SPLASH)e2.hp-=MERGE2_DMG*0.6;}
+        m.cd=MERGE2_CD;
+        state.shots.push({fx:m.cx*CELL,fy:m.cy*CELL,tx:best.px,ty:best.py,t:130,big:true});
+      }
     }
   }
   // 처치 정산
@@ -447,46 +496,84 @@ function step(dt){
   if(state.running&&state.spawnQueue.length===0&&state.enemies.length===0)endWave();
 }
 
-// ── 렌더 ──
+// ── 렌더 (마법·판타지 픽셀아트) ──
 function getCss(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
+const PAL={
+  floorA:'#221a42', floorB:'#291f50', rune:'#3a2d6b', grid:'#302358',
+  wall:'#574789', wallLit:'#7d6bc0', wallDark:'#3a2d63', gem:'#5ce1e6', gemLit:'#c4f8fa',
+  merge:'#b25cff', mergeLit:'#e2b8ff', mergeDark:'#7c37c9',
+  line:'#4d7cff', lineLit:'#a8c4ff', lineDark:'#2f4aa0',
+  core:'#7cf0ff', coreLit:'#e6ffff', coreGlow:'rgba(124,240,255,',
+  wraith:'#3b2b6e', wraithLit:'#6a52b8', wraithDark:'#241a45', eye:'#8ef7ff',
+  hp:'#5ce1e6', hpLow:'#ff5d8a',
+};
+function bevel(px,py,base,lit,dark){
+  ctx.fillStyle=base;ctx.fillRect(px,py,CELL,CELL);
+  ctx.fillStyle=lit;ctx.fillRect(px,py,CELL,2);ctx.fillRect(px,py,2,CELL);
+  ctx.fillStyle=dark;ctx.fillRect(px,py+CELL-2,CELL,2);ctx.fillRect(px+CELL-2,py,2,CELL);
+}
+function hpbar(px,py,r){
+  if(r>=1)return;
+  ctx.fillStyle='rgba(0,0,0,.55)';ctx.fillRect(px+3,py+CELL-4,CELL-6,2);
+  ctx.fillStyle=r>.4?PAL.hp:PAL.hpLow;ctx.fillRect(px+3,py+CELL-4,(CELL-6)*r,2);
+}
 function draw(){
-  ctx.fillStyle=getCss('--grid');ctx.fillRect(0,0,cv.width,cv.height);
-  ctx.strokeStyle=getCss('--grid-line');ctx.lineWidth=1;
+  ctx.imageSmoothingEnabled=false;
+  const pulse=0.5+0.5*Math.sin(clock/420);
+
+  // 바닥 타일(체커 + 룬)
+  for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
+    const px=x*CELL,py=y*CELL;
+    ctx.fillStyle=((x+y)&1)?PAL.floorA:PAL.floorB;ctx.fillRect(px,py,CELL,CELL);
+    if(((x*3+y*7)%11)===0){ctx.fillStyle=PAL.rune;ctx.fillRect(px+CELL/2-1,py+CELL/2-1,2,2);}
+  }
+  ctx.strokeStyle=PAL.grid;ctx.lineWidth=1;
   for(let i=0;i<=COLS;i++){ctx.beginPath();ctx.moveTo(i*CELL,0);ctx.lineTo(i*CELL,cv.height);ctx.stroke();}
   for(let i=0;i<=ROWS;i++){ctx.beginPath();ctx.moveTo(0,i*CELL);ctx.lineTo(cv.width,i*CELL);ctx.stroke();}
 
-  // 블록(벽+포탑) — 개별 셀
+  // 블록(마법석 벽 + 룬 젬 포탑) — 개별 셀
   for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
     if(grid[y][x]!==WALL)continue;
-    const c=cells[key(x,y)],px=x*CELL,py=y*CELL;
+    const c=cells[key(x,y)],px=x*CELL,py=y*CELL,r=c?c.hp/c.max:1;
     if(c&&c.merge){
-      const r=c?c.hp/c.max:1;
-      ctx.fillStyle=getCss('--accent');ctx.fillRect(px+1,py+1,CELL-2,CELL-2);
-      ctx.fillStyle='rgba(255,255,255,.18)';ctx.fillRect(px+1,py+1,CELL-2,3);
-      if(r<1){ctx.fillStyle='#000';ctx.fillRect(px+3,py+CELL-6,CELL-6,3);ctx.fillStyle=r>.4?getCss('--hp'):getCss('--hplow');ctx.fillRect(px+3,py+CELL-6,(CELL-6)*r,3);}
+      if(c.merge.type==='line') bevel(px,py,PAL.line,PAL.lineLit,PAL.lineDark);
+      else bevel(px,py,PAL.merge,PAL.mergeLit,PAL.mergeDark);
     } else {
-      const r=c?c.hp/c.max:1;
-      ctx.fillStyle=getCss('--wall');ctx.fillRect(px+1,py+1,CELL-2,CELL-2);
-      ctx.fillStyle=getCss('--wall-top');ctx.fillRect(px+1,py+1,CELL-2,3);
-      ctx.fillStyle=getCss('--turret');ctx.fillRect(px+CELL/2-4,py+CELL/2-4,8,8);
-      ctx.fillStyle=getCss('--turret-core');ctx.beginPath();ctx.arc(px+CELL/2,py+CELL/2,2.5,0,7);ctx.fill();
-      if(r<1){ctx.fillStyle='#000';ctx.fillRect(px+3,py+CELL-6,CELL-6,3);ctx.fillStyle=r>.4?getCss('--hp'):getCss('--hplow');ctx.fillRect(px+3,py+CELL-6,(CELL-6)*r,3);}
+      bevel(px,py,PAL.wall,PAL.wallLit,PAL.wallDark);
+      ctx.fillStyle=PAL.gem;ctx.fillRect(px+CELL/2-4,py+CELL/2-4,8,8);
+      ctx.fillStyle=PAL.gemLit;ctx.fillRect(px+CELL/2-3,py+CELL/2-3,3,3);
+    }
+    hpbar(px,py,r);
+  }
+  // 머지 유닛 오버레이
+  for(const m of merges){
+    if(m.type==='line'){
+      const a=m.cells[0],b=m.cells[m.cells.length-1];
+      const ax=(a[0]+0.5)*CELL,ay=(a[1]+0.5)*CELL,bx=(b[0]+0.5)*CELL,by=(b[1]+0.5)*CELL;
+      ctx.save();ctx.shadowColor=PAL.lineLit;ctx.shadowBlur=9;
+      ctx.strokeStyle=PAL.lineLit;ctx.lineWidth=3;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke();ctx.restore();
+      ctx.fillStyle=PAL.coreLit;
+      for(const [lx,ly] of m.cells)ctx.fillRect((lx+0.5)*CELL-2,(ly+0.5)*CELL-2,4,4);
+    } else {
+      const mx=m.cx*CELL,my=m.cy*CELL;
+      ctx.save();ctx.shadowColor=PAL.merge;ctx.shadowBlur=12;
+      ctx.fillStyle=PAL.mergeLit;
+      ctx.beginPath();ctx.moveTo(mx,my-15);ctx.lineTo(mx+12,my);ctx.lineTo(mx,my+15);ctx.lineTo(mx-12,my);ctx.closePath();ctx.fill();
+      ctx.restore();
+      ctx.fillStyle=PAL.coreLit;
+      ctx.beginPath();ctx.moveTo(mx,my-15);ctx.lineTo(mx+5,my-4);ctx.lineTo(mx,my+3);ctx.lineTo(mx-5,my-4);ctx.closePath();ctx.fill();
     }
   }
-  // 머지 유닛(중포탑) 오버레이
-  for(const m of merges){
-    const cxp=m.cx*CELL,cyp=m.cy*CELL;
-    ctx.strokeStyle=getCss('--turret');ctx.lineWidth=2;ctx.strokeRect(m.tx*CELL+2,m.ty*CELL+2,2*CELL-4,2*CELL-4);
-    ctx.fillStyle=getCss('--turret');ctx.beginPath();ctx.arc(cxp,cyp,8,0,7);ctx.fill();
-    ctx.fillStyle=getCss('--turret-core');ctx.beginPath();ctx.arc(cxp,cyp,4,0,7);ctx.fill();
-  }
 
-  // 코어
-  (function(){const px=CORE.x*CELL,py=CORE.y*CELL,r=state.coreHp/CORE_MAX;
-    ctx.fillStyle=getCss('--core');ctx.fillRect(px+2,py+2,CELL-4,CELL-4);
-    ctx.strokeStyle=getCss('--core-edge');ctx.lineWidth=2;ctx.strokeRect(px+2,py+2,CELL-4,CELL-4);
-    ctx.fillStyle='#000';ctx.font='bold 8px monospace';ctx.textAlign='center';ctx.fillText('CORE',px+CELL/2,py+CELL/2+3);ctx.textAlign='start';
-    ctx.fillStyle='#000';ctx.fillRect(px+3,py+CELL-6,CELL-6,3);ctx.fillStyle=r>.4?getCss('--hp'):getCss('--hplow');ctx.fillRect(px+3,py+CELL-6,(CELL-6)*r,3);
+  // 코어 — 빛나는 마력 오브
+  (function(){const cx=CORE.x*CELL+CELL/2,cy=CORE.y*CELL+CELL/2,r=state.coreHp/CORE_MAX;
+    const g=ctx.createRadialGradient(cx,cy,2,cx,cy,CELL*(0.95+0.3*pulse));
+    g.addColorStop(0,PAL.coreGlow+(0.55*(0.6+0.4*pulse))+')');g.addColorStop(1,PAL.coreGlow+'0)');
+    ctx.fillStyle=g;ctx.fillRect((CORE.x-1)*CELL,(CORE.y-1)*CELL,CELL*3,CELL*3);
+    ctx.fillStyle=PAL.core;ctx.beginPath();ctx.arc(cx,cy,CELL*0.34,0,7);ctx.fill();
+    ctx.fillStyle=PAL.coreLit;ctx.beginPath();ctx.arc(cx-2,cy-2,CELL*0.15,0,7);ctx.fill();
+    hpbar(CORE.x*CELL,CORE.y*CELL,r);
   })();
 
   // 배치/수리 미리보기
@@ -494,32 +581,51 @@ function draw(){
     const {gx,gy}=state.hover;
     if(state.mode==='build'){
       const b=state.tray[state.activeSlot];
-      if(b){const mat=b.mat,ok=canPlaceBlock(mat,gx,gy);ctx.globalAlpha=.5;ctx.fillStyle=ok?getCss('--turret'):getCss('--hplow');
+      if(b){const mat=b.mat,ok=canPlaceBlock(mat,gx,gy);ctx.globalAlpha=.5;ctx.fillStyle=ok?PAL.gem:PAL.hpLow;
         for(let y=0;y<mat.length;y++)for(let x=0;x<mat[0].length;x++)if(mat[y][x]){const cx=gx+x,cy=gy+y;if(cx<COLS&&cy<ROWS)ctx.fillRect(cx*CELL+1,cy*CELL+1,CELL-2,CELL-2);}
         ctx.globalAlpha=1;
-        // 머지 미리보기: 이걸 놓으면 2x2로 합쳐질 자리
-        if(ok){const quads=previewMergeQuads(mat,gx,gy);ctx.setLineDash([4,3]);ctx.strokeStyle=getCss('--accent');ctx.lineWidth=2;
-          for(const [qx,qy] of quads)ctx.strokeRect(qx*CELL+2,qy*CELL+2,2*CELL-4,2*CELL-4);ctx.setLineDash([]);}
+        if(ok){const units=previewUnits(mat,gx,gy);ctx.setLineDash([4,3]);ctx.lineWidth=2;ctx.lineCap='round';
+          for(const u of units){
+            if(u.type==='sq2'){const tx=u.cells[0][0],ty=u.cells[0][1];ctx.strokeStyle=PAL.merge;ctx.strokeRect(tx*CELL+2,ty*CELL+2,2*CELL-4,2*CELL-4);}
+            else{const a=u.cells[0],b=u.cells[u.cells.length-1];ctx.strokeStyle=PAL.lineLit;ctx.beginPath();ctx.moveTo((a[0]+0.5)*CELL,(a[1]+0.5)*CELL);ctx.lineTo((b[0]+0.5)*CELL,(b[1]+0.5)*CELL);ctx.stroke();}
+          }
+          ctx.setLineDash([]);}
       }
+    } else if(state.mode==='merge'){
+      const u=reformUnitAt(gx,gy);
+      if(u){const okm=state.gold>=MERGE_COST;ctx.globalAlpha=.5;ctx.fillStyle=okm?PAL.merge:PAL.hpLow;
+        for(const [x,y] of u.cells)ctx.fillRect(x*CELL+2,y*CELL+2,CELL-4,CELL-4);ctx.globalAlpha=1;}
     } else {
       let ok;
       if(gx===CORE.x&&gy===CORE.y) ok=state.coreHp<CORE_MAX&&state.gold>=CORE_REPAIR_COST;
       else{const c=cells[key(gx,gy)];ok=c&&c.hp<c.max&&state.gold>=REPAIR_COST;}
-      ctx.globalAlpha=.4;ctx.fillStyle=ok?getCss('--hp'):getCss('--hplow');ctx.fillRect(gx*CELL+2,gy*CELL+2,CELL-4,CELL-4);ctx.globalAlpha=1;
+      ctx.globalAlpha=.4;ctx.fillStyle=ok?PAL.hp:PAL.hpLow;ctx.fillRect(gx*CELL+2,gy*CELL+2,CELL-4,CELL-4);ctx.globalAlpha=1;
     }
   }
 
-  // 적
+  // 적 — 떠다니는 그림자 정령
   for(const e of state.enemies){
-    ctx.fillStyle=getCss('--enemy');ctx.beginPath();ctx.arc(e.px,e.py,CELL*0.3,0,7);ctx.fill();
-    ctx.strokeStyle=getCss('--enemy-edge');ctx.lineWidth=2;ctx.stroke();
-    const w=CELL*0.6,r=e.hp/e.max;
-    ctx.fillStyle='#000';ctx.fillRect(e.px-w/2,e.py-CELL*0.42,w,4);
-    ctx.fillStyle=getCss('--hp');ctx.fillRect(e.px-w/2,e.py-CELL*0.42,w*r,4);
+    const s=Math.round(CELL*0.6),hs=s>>1;
+    const bob=Math.sin(clock/260+e.px*0.3)*2;
+    const bx=Math.round(e.px-hs),by=Math.round(e.py-hs+bob);
+    ctx.fillStyle='rgba(0,0,0,.35)';ctx.fillRect(bx+2,by+s-1,s-4,3);
+    ctx.fillStyle=PAL.wraith;ctx.fillRect(bx,by,s,s);
+    ctx.fillStyle=PAL.wraithLit;ctx.fillRect(bx,by,s,2);ctx.fillRect(bx,by,2,s);
+    ctx.fillStyle=PAL.wraithDark;ctx.fillRect(bx,by+s-2,s,2);ctx.fillRect(bx+s-2,by,2,s);
+    ctx.save();ctx.shadowColor=PAL.eye;ctx.shadowBlur=6;ctx.fillStyle=PAL.eye;
+    ctx.fillRect(bx+Math.round(s*0.24),by+Math.round(s*0.42),3,3);
+    ctx.fillRect(bx+Math.round(s*0.60),by+Math.round(s*0.42),3,3);
+    ctx.restore();
+    const w=s,r=e.hp/e.max;
+    ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(bx,by-6,w,3);
+    ctx.fillStyle=r>.4?PAL.hp:PAL.hpLow;ctx.fillRect(bx,by-6,w*r,3);
   }
 
-  // 사격 이펙트
-  for(const s of state.shots){const a=Math.min(1,s.t/110)*.9;ctx.strokeStyle=s.big?'rgba(188,140,255,'+a+')':'rgba(165,214,255,'+a+')';ctx.lineWidth=s.big?3:1.5;ctx.beginPath();ctx.moveTo(s.fx,s.fy);ctx.lineTo(s.tx,s.ty);ctx.stroke();}
+  // 마력탄 이펙트
+  for(const s of state.shots){const a=Math.min(1,s.t/110);
+    ctx.save();ctx.shadowColor=s.big?PAL.merge:PAL.gem;ctx.shadowBlur=6;
+    ctx.strokeStyle=(s.big?'rgba(226,184,255,':'rgba(140,247,255,')+(a*0.95)+')';ctx.lineWidth=s.big?3:2;
+    ctx.beginPath();ctx.moveTo(s.fx,s.fy);ctx.lineTo(s.tx,s.ty);ctx.stroke();ctx.restore();}
 }
 
 // ── UI ──
@@ -537,9 +643,13 @@ function renderTray(){
   });
   document.getElementById('tray-count').textContent=state.tray.filter(b=>b).length+'/'+TRAY_SIZE;
 }
-function setMode(m){state.mode=m;document.getElementById('m-build').classList.toggle('on',m==='build');document.getElementById('m-repair').classList.toggle('on',m==='repair');}
+function setMode(m){state.mode=m;
+  document.getElementById('m-build').classList.toggle('on',m==='build');
+  document.getElementById('m-repair').classList.toggle('on',m==='repair');
+  document.getElementById('m-merge').classList.toggle('on',m==='merge');}
 document.getElementById('m-build').onclick=()=>setMode('build');
 document.getElementById('m-repair').onclick=()=>setMode('repair');
+document.getElementById('m-merge').onclick=()=>setMode('merge');
 
 function cellFromEvent(ev){const r=cv.getBoundingClientRect();return {gx:Math.floor((ev.clientX-r.left)/r.width*COLS),gy:Math.floor((ev.clientY-r.top)/r.height*ROWS)};}
 cv.addEventListener('mousemove',ev=>{state.hover=cellFromEvent(ev);});
@@ -548,6 +658,7 @@ cv.addEventListener('contextmenu',ev=>{ev.preventDefault();if(state.mode==='buil
 cv.addEventListener('click',ev=>{
   const {gx,gy}=cellFromEvent(ev);
   if(state.mode==='build'){const b=state.tray[state.activeSlot];if(!b)return;if(canPlaceBlock(b.mat,gx,gy)){placeBlock(b.mat,gx,gy);setSlotEmpty(state.activeSlot);updateStats();}}
+  else if(state.mode==='merge'){doReform(gx,gy);}
   else{repairAt(gx,gy);}
 });
 window.addEventListener('keydown',ev=>{if(ev.key==='r'||ev.key==='R'){const b=state.tray[state.activeSlot];if(b){b.mat=rotate(b.mat);renderTray();}}});
