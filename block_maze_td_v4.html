@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BLOCK MAZE — 코어 디펜스 v0.4</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --line:#21262d;
+    --grid:#1c2330; --grid-line:#2a3340;
+    --ink:#e6edf3; --muted:#7d8590;
+    --wall:#3b4252; --wall-top:#4c566a;
+    --turret:#58a6ff; --turret-core:#a5d6ff;
+    --core:#e3b341; --core-edge:#ffd866;
+    --enemy:#f0883e; --enemy-edge:#ffb77c;
+    --gold:#e3b341; --range:rgba(88,166,255,.10);
+    --hp:#3fb950; --hplow:#f85149;
+    --accent:#bc8cff;
+    --font:'DM Mono',ui-monospace,'SFMono-Regular',Menlo,monospace;
+  }
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Bebas+Neue&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg);color:var(--ink);font-family:var(--font);
+    min-height:100vh;display:flex;flex-direction:column;align-items:center;
+    padding:22px 16px;gap:16px;
+  }
+  header{text-align:center;max-width:780px}
+  h1{
+    font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,7vw,52px);
+    letter-spacing:.06em;line-height:.95;
+    background:linear-gradient(100deg,var(--turret),var(--accent),var(--gold));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  header p{color:var(--muted);font-size:13px;margin-top:6px;letter-spacing:.02em}
+  .stage{display:flex;gap:18px;flex-wrap:wrap;justify-content:center;align-items:flex-start}
+  .board-wrap{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;box-shadow:0 10px 40px rgba(0,0,0,.4)}
+  canvas{display:block;border-radius:8px;cursor:pointer;touch-action:none}
+  .side{width:244px;display:flex;flex-direction:column;gap:13px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:13px}
+  .card h2{font-size:11px;letter-spacing:.18em;color:var(--muted);text-transform:uppercase;margin-bottom:9px;font-weight:500;display:flex;justify-content:space-between;align-items:center}
+  .card h2 .tag{color:var(--accent);font-size:10px}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .stat{background:var(--grid);border:1px solid var(--grid-line);border-radius:8px;padding:7px 10px}
+  .stat .v{font-family:'Bebas Neue',sans-serif;font-size:25px;line-height:1}
+  .stat .l{font-size:10px;color:var(--muted);letter-spacing:.08em;margin-top:2px}
+  .stat.core .v{color:var(--core)} .stat.gold .v{color:var(--gold)}
+  .stat.wave .v{color:var(--accent)} .stat.score .v{color:var(--turret)}
+  .tray{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  .slot{aspect-ratio:1;background:var(--grid);border:1px solid var(--grid-line);border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.12s;position:relative}
+  .slot:hover{border-color:var(--turret)}
+  .slot.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(188,140,255,.3)}
+  .slot.empty{border-style:dashed;opacity:.55}
+  .slot.empty::before{content:'+';color:var(--gold);font-size:18px;font-family:'Bebas Neue',sans-serif}
+  .slot.empty:hover{opacity:1;border-color:var(--gold)}
+  .slot.empty.broke{cursor:not-allowed;opacity:.25}
+  .slot.empty.broke:hover{border-color:var(--grid-line)}
+  .buy-hint{font-size:10px;color:var(--muted);margin-top:8px;text-align:center;letter-spacing:.04em}
+  .buy-hint b{color:var(--gold)}
+  .mode-row{display:flex;gap:8px}
+  .mode-btn{flex:1;background:var(--grid);border:1px solid var(--grid-line);color:var(--ink);border-radius:8px;padding:10px 6px;font-family:var(--font);font-size:12px;cursor:pointer;transition:.12s;letter-spacing:.02em}
+  .mode-btn:hover{border-color:var(--turret)}
+  .mode-btn.on{background:rgba(88,166,255,.15);border-color:var(--turret);color:var(--turret-core)}
+  .mode-btn .sub{display:block;font-size:9px;color:var(--muted);margin-top:2px;letter-spacing:.04em}
+  .mode-btn.on .sub{color:var(--turret)}
+  .go{width:100%;background:linear-gradient(100deg,#2ea043,#3fb950);color:#04150a;border:none;border-radius:8px;padding:13px;font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.08em;cursor:pointer;transition:.12s}
+  .go:hover{filter:brightness(1.08)}
+  .go:disabled{opacity:.4;cursor:not-allowed;filter:none}
+  .hint{font-size:11px;color:var(--muted);line-height:1.7}
+  .hint b{color:var(--ink);font-weight:500} .hint .k{color:var(--accent)} .hint .g{color:var(--gold)}
+  .next-wave{background:var(--grid);border:1px solid var(--grid-line);border-radius:8px;padding:9px;font-size:11px;color:var(--muted);line-height:1.6}
+  .next-wave .row{display:flex;justify-content:space-between;padding:2px 0}
+  .next-wave .row span:last-child{color:var(--ink)}
+  .msg{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(13,17,23,.85);z-index:10;backdrop-filter:blur(4px)}
+  .msg.show{display:flex}
+  .msg-box{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:34px 42px;text-align:center;max-width:340px}
+  .msg-box h3{font-family:'Bebas Neue',sans-serif;font-size:42px;letter-spacing:.04em}
+  .msg-box p{color:var(--muted);font-size:13px;margin:8px 0 22px}
+  .msg-box.win h3{color:var(--hp)} .msg-box.lose h3{color:var(--hplow)}
+  footer{color:var(--muted);font-size:11px;text-align:center;letter-spacing:.04em;max-width:600px}
+</style>
+</head>
+<body>
+<header>
+  <h1>BLOCK MAZE</h1>
+  <p>블록은 <b>포탑이자 벽</b>입니다. 중앙 코어를 지키세요. 적은 막힌 벽을 부수고, 부서진 자리는 코어로 가는 지름길이 됩니다.</p>
+</header>
+
+<div class="stage">
+  <div class="board-wrap"><canvas id="board"></canvas></div>
+  <div class="side">
+    <div class="card">
+      <h2>상황</h2>
+      <div class="stats">
+        <div class="stat core"><div class="v" id="s-core">30</div><div class="l">코어 HP</div></div>
+        <div class="stat gold"><div class="v" id="s-gold">120</div><div class="l">골드</div></div>
+        <div class="stat wave"><div class="v" id="s-wave">0</div><div class="l">웨이브</div></div>
+        <div class="stat score"><div class="v" id="s-score">0</div><div class="l">처치</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>다음 웨이브 <span class="tag" id="nw-num">1/8</span></h2>
+      <div class="next-wave">
+        <div class="row"><span>적 수</span><span id="nw-cnt">6</span></div>
+        <div class="row"><span>적 체력</span><span id="nw-hp">23</span></div>
+        <div class="row"><span>스폰 방향</span><span id="nw-dir">사방</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>블록 트레이 <span class="tag" id="tray-count">5/5</span></h2>
+      <div class="tray" id="tray"></div>
+      <p class="buy-hint">빈 슬롯 클릭 = <b>15골드</b> 구매 · <b>R</b>/우클릭 회전</p>
+    </div>
+
+    <div class="card">
+      <h2>모드</h2>
+      <div class="mode-row">
+        <button class="mode-btn on" id="m-build" data-mode="build">건설·보수<span class="sub">조각 배치</span></button>
+        <button class="mode-btn" id="m-repair" data-mode="repair">수리<span class="sub">벽10·코어15골드</span></button>
+      </div>
+    </div>
+
+    <div class="card">
+      <button class="go" id="go">웨이브 시작</button>
+      <p class="hint" style="margin-top:11px">
+        웨이브 <b class="k">사이</b>엔 자유 건설, 전투 <b class="k">중</b>엔 조각으로 구멍 메우기·<b class="g">골드 수리</b>. <b>2×2</b>를 채우면 <b class="k">중포탑</b>으로 머지(스플래시). 1칸이라도 깨지면 일반 타일로 풀리니, 그 칸을 다시 채워 <b class="k">재머지</b>. 코어 HP 0이면 게임오버.
+      </p>
+    </div>
+  </div>
+</div>
+
+<footer>v0.4 프로토타입 · 블록=포탑+벽+HP · 적은 코어로 몰려와 앞을 막은 벽을 부순다 · 수치는 임시(플레이하며 조정)</footer>
+
+<div class="msg" id="msg">
+  <div class="msg-box" id="msg-box">
+    <h3 id="msg-title">CLEAR</h3>
+    <p id="msg-text"></p>
+    <button class="go" id="msg-btn">다시 시작</button>
+  </div>
+</div>
+
+<script>
+const COLS=15, ROWS=15, CELL=34;
+const cv=document.getElementById('board'), ctx=cv.getContext('2d');
+cv.width=COLS*CELL; cv.height=ROWS*CELL;
+const CORE={x:7,y:7};
+const CORE_MAX=30;
+
+// 셀 값: 0 빈칸, 1 블록(벽+포탑), 9 코어
+const EMPTY=0, WALL=1, CORE_V=9;
+const DIRS=[[1,0],[-1,0],[0,1],[0,-1]];
+
+// ── 밸런스 상수(임시) ──
+const TRAY_SIZE=5, REFILL_PER_WAVE=2, BUY_COST=15;
+const BLOCK_HP=24;
+const TURRET_RANGE=2.4, TURRET_DMG=2, TURRET_CD=720;   // ms
+// 2x2 머지 = 중포탑(스플래시). 셀별 HP 유지 → 1칸이라도 깨지면 머지 해제
+const MERGE2_DMG=5, MERGE2_RANGE=3.0, MERGE2_CD=640, MERGE2_SPLASH=0.85;
+const REPAIR_COST=10, REPAIR_AMT=12;
+const CORE_REPAIR_COST=15, CORE_REPAIR_AMT=6;          // 코어 수리
+const WALL_DIG_BASE=2, WALL_DIG_HPDIV=12;              // 굴착 비용 = base + ceil(hp/div) (낮을수록 벽 공략 적극적)
+const MERGE_AGGRO=0.5;                                 // 머지 2x2 경로 비용(열린 땅<1보다 낮음) → 적이 몰려들어 공략
+const SPAWN_MIN=240, SPAWN_MAX=560;   // 불규칙 스폰 간격(ms)
+const KILL_GOLD=6;
+const ENEMY_WALL_DMG=14, ENEMY_WALL_INT=300;           // 벽 타격
+const ENEMY_CORE_DMG=6, ENEMY_CORE_INT=500;            // 코어 타격
+
+const ALL_DIRS=['N','S','W','E'];
+const WAVES=[
+  {count:6,  dirs:ALL_DIRS},
+  {count:8,  dirs:ALL_DIRS},
+  {count:10, dirs:ALL_DIRS},
+  {count:12, dirs:ALL_DIRS},
+  {count:14, dirs:ALL_DIRS},
+  {count:16, dirs:ALL_DIRS},
+  {count:18, dirs:ALL_DIRS},
+  {count:22, dirs:ALL_DIRS},
+];
+const TOTAL_WAVES=WAVES.length;
+function enemyHpFor(w){ return 32 + w*14; }       // w는 1부터
+function enemySpeedFor(w){ return 1.25 + w*0.07; } // cells/sec
+const DIR_LABEL={W:'서',E:'동',N:'북',S:'남'};
+
+const SHAPES={I:[[1,1,1,1]],O:[[1,1],[1,1]],T:[[1,1,1],[0,1,0]],L:[[1,0],[1,0],[1,1]],J:[[0,1],[0,1],[1,1]],S:[[0,1,1],[1,1,0]],Z:[[1,1,0],[0,1,1]]};
+const KEYS=Object.keys(SHAPES);
+function rotate(m){const r=m[0].length,c=m.length,out=Array.from({length:r},()=>Array(c).fill(0));for(let y=0;y<m.length;y++)for(let x=0;x<m[0].length;x++)out[x][m.length-1-y]=m[y][x];return out;}
+function randBlock(){return {mat:SHAPES[KEYS[Math.floor(Math.random()*KEYS.length)]].map(r=>[...r])};}
+
+let grid, cells, field, merges;
+function key(x,y){return x+','+y;}
+function initGrid(){
+  grid=Array.from({length:ROWS},()=>Array(COLS).fill(EMPTY));
+  cells={};merges=[];
+  grid[CORE.y][CORE.x]=CORE_V;
+}
+
+let state={coreHp:CORE_MAX, gold:120, wave:0, score:0, running:false, mode:'build',
+  tray:[], activeSlot:0, hover:null, enemies:[], spawnQueue:[], spawnTimer:0, shots:[]};
+
+// ── 트레이 ──
+function initTray(){state.tray=Array.from({length:TRAY_SIZE},()=>randBlock());state.activeSlot=0;renderTray();}
+function pickFirstAvailableSlot(){if(state.tray[state.activeSlot])return;const idx=state.tray.findIndex(b=>b);if(idx>=0){state.activeSlot=idx;renderTray();}}
+function refillEmptySlots(n){let f=0;for(let i=0;i<TRAY_SIZE&&f<n;i++){if(!state.tray[i]){state.tray[i]=randBlock();f++;}}renderTray();pickFirstAvailableSlot();}
+function buyBlockToSlot(i){if(state.tray[i]||state.gold<BUY_COST)return;state.gold-=BUY_COST;state.tray[i]=randBlock();state.activeSlot=i;updateStats();renderTray();}
+function setSlotEmpty(i){state.tray[i]=null;renderTray();pickFirstAvailableSlot();}
+
+// ── 경로장(Dijkstra, 코어에서 바깥으로) ──
+function enterCost(x,y){
+  const v=grid[y][x];
+  if(v===CORE_V) return Infinity;         // 코어를 관통 경로로 쓰지 않음(공격 대상)
+  if(v===WALL){const c=cells[key(x,y)];
+    if(c&&c.merge)return MERGE_AGGRO;                  // 2x2는 우회보다 뚫는 걸 선호(어그로)
+    const hp=c?c.hp:BLOCK_HP;return WALL_DIG_BASE+Math.ceil(hp/WALL_DIG_HPDIV);}
+  return 1;
+}
+function computeField(){
+  const dist=Array.from({length:ROWS},()=>Array(COLS).fill(Infinity));
+  const next=Array.from({length:ROWS},()=>Array(COLS).fill(null));
+  dist[CORE.y][CORE.x]=0;
+  const pq=[[0,CORE.x,CORE.y]];
+  while(pq.length){
+    let mi=0;for(let i=1;i<pq.length;i++)if(pq[i][0]<pq[mi][0])mi=i;
+    const [d,x,y]=pq.splice(mi,1)[0];
+    if(d>dist[y][x])continue;
+    for(const [dx,dy] of DIRS){
+      const nx=x+dx,ny=y+dy;
+      if(nx<0||nx>=COLS||ny<0||ny>=ROWS)continue;
+      const c=enterCost(nx,ny);
+      if(c===Infinity)continue;
+      const nd=d+c;
+      if(nd<dist[ny][nx]){dist[ny][nx]=nd;next[ny][nx]={x,y};pq.push([nd,nx,ny]);}
+    }
+  }
+  field={dist,next};
+  // 정지 상태의 적은 경로 변화에 맞춰 재판단
+  for(const e of state.enemies) if(e.state!=='move') e.state='decide';
+}
+
+// ── 배치/수리 ──
+function canPlaceBlock(mat,gx,gy){
+  for(let y=0;y<mat.length;y++)for(let x=0;x<mat[0].length;x++){
+    if(!mat[y][x])continue;
+    const cx=gx+x,cy=gy+y;
+    if(cx<0||cx>=COLS||cy<0||cy>=ROWS)return false;
+    if(grid[cy][cx]!==EMPTY)return false;   // 코어/기존 블록 위 불가
+  }
+  return true;
+}
+function placeBlock(mat,gx,gy){
+  const placed=[];
+  for(let y=0;y<mat.length;y++)for(let x=0;x<mat[0].length;x++)if(mat[y][x]){
+    const cx=gx+x,cy=gy+y;grid[cy][cx]=WALL;cells[key(cx,cy)]={hp:BLOCK_HP,max:BLOCK_HP,cd:0};placed.push([cx,cy]);
+  }
+  checkMerges(placed);
+  computeField();
+}
+function repairAt(gx,gy){
+  if(gx===CORE.x&&gy===CORE.y){                        // 코어 수리
+    if(state.coreHp>=CORE_MAX||state.gold<CORE_REPAIR_COST)return false;
+    state.gold-=CORE_REPAIR_COST;state.coreHp=Math.min(CORE_MAX,state.coreHp+CORE_REPAIR_AMT);updateStats();return true;
+  }
+  const c=cells[key(gx,gy)];
+  if(!c||state.gold<REPAIR_COST||c.hp>=c.max)return false;
+  state.gold-=REPAIR_COST;c.hp=Math.min(c.max,c.hp+REPAIR_AMT);updateStats();return true;
+}
+function destroyCell(x,y){delete cells[key(x,y)];grid[y][x]=EMPTY;computeField();}
+
+// ── 2x2 머지 (놓을 때만·주변만·우선순위·claim·1패스) ──
+function formMerge2x2(quad){
+  const tx=quad[0][0],ty=quad[0][1];
+  const m={tx,ty,cx:tx+1,cy:ty+1,cells:quad.map(q=>[q[0],q[1]]),cd:0,type:'sq2'};
+  merges.push(m);
+  quad.forEach(([x,y])=>{const c=cells[key(x,y)]||{hp:BLOCK_HP,max:BLOCK_HP,cd:0};c.merge=m;cells[key(x,y)]=c;});
+}
+function checkMerges(newCells){
+  const corners=new Set();
+  for(const [x,y] of newCells) for(const [ox,oy] of [[-1,-1],[0,-1],[-1,0],[0,0]]) corners.add((x+ox)+','+(y+oy));
+  const sorted=[...corners].map(s=>s.split(',').map(Number)).sort((a,b)=>a[1]-b[1]||a[0]-b[0]);
+  const claimed=new Set();
+  for(const [x,y] of sorted){
+    const quad=[[x,y],[x+1,y],[x,y+1],[x+1,y+1]];
+    if(quad.some(([qx,qy])=>qx<0||qx>=COLS||qy<0||qy>=ROWS))continue;
+    if(quad.some(([qx,qy])=>grid[qy][qx]!==WALL))continue;            // 4칸 모두 벽
+    if(quad.some(([qx,qy])=>{const c=cells[key(qx,qy)];return c&&c.merge;}))continue; // 이미 머지된 칸 없음
+    if(quad.some(([qx,qy])=>claimed.has(key(qx,qy))))continue;        // 이번 판정에서 claim 안 됨
+    formMerge2x2(quad);
+    quad.forEach(([qx,qy])=>claimed.add(key(qx,qy)));
+  }
+}
+function dissolveMerge(m){       // 머지 해제 → 남은 칸은 일반 타일로 복귀
+  for(const [x,y] of m.cells){const c=cells[key(x,y)];if(c)delete c.merge;}
+  const i=merges.indexOf(m);if(i>=0)merges.splice(i,1);
+}
+function previewMergeQuads(mat,gx,gy){
+  const ghost=new Set();
+  for(let y=0;y<mat.length;y++)for(let x=0;x<mat[0].length;x++)if(mat[y][x])ghost.add(key(gx+x,gy+y));
+  const isWall=(x,y)=>(x>=0&&x<COLS&&y>=0&&y<ROWS)&&(ghost.has(key(x,y))||grid[y][x]===WALL);
+  const merged=(x,y)=>{const c=cells[key(x,y)];return c&&c.merge;};
+  const corners=new Set();
+  for(const g of ghost){const p=g.split(',').map(Number);for(const [ox,oy] of [[-1,-1],[0,-1],[-1,0],[0,0]])corners.add((p[0]+ox)+','+(p[1]+oy));}
+  const sorted=[...corners].map(s=>s.split(',').map(Number)).sort((a,b)=>a[1]-b[1]||a[0]-b[0]);
+  const res=[],claimed=new Set();
+  for(const [x,y] of sorted){
+    const quad=[[x,y],[x+1,y],[x,y+1],[x+1,y+1]];
+    if(quad.some(([qx,qy])=>!isWall(qx,qy)))continue;
+    if(quad.some(([qx,qy])=>merged(qx,qy)))continue;
+    if(quad.some(([qx,qy])=>claimed.has(key(qx,qy))))continue;
+    if(!quad.some(([qx,qy])=>ghost.has(key(qx,qy))))continue;         // 새 칸 포함해야
+    res.push([x,y]);quad.forEach(([qx,qy])=>claimed.add(key(qx,qy)));
+  }
+  return res;
+}
+
+// ── 적 ──
+function borderCellsFor(dirs){
+  const list=[];
+  for(let x=0;x<COLS;x++){if(dirs.includes('N'))list.push([x,0]);if(dirs.includes('S'))list.push([x,ROWS-1]);}
+  for(let y=0;y<ROWS;y++){if(dirs.includes('W'))list.push([0,y]);if(dirs.includes('E'))list.push([COLS-1,y]);}
+  return list;
+}
+function spawnEnemy(dirs,w){
+  const opts=borderCellsFor(dirs).filter(([x,y])=>grid[y][x]===EMPTY);
+  const pool=opts.length?opts:borderCellsFor(dirs);
+  const [sx,sy]=pool[Math.floor(Math.random()*pool.length)];
+  const hp=enemyHpFor(w);
+  state.enemies.push({cx:sx,cy:sy,px:(sx+0.5)*CELL,py:(sy+0.5)*CELL,tx:sx,ty:sy,
+    hp,max:hp,speed:enemySpeedFor(w),state:'decide',atkCd:0,dead:false});
+}
+
+// ── 웨이브 ──
+function startWave(){
+  if(state.running||state.wave>=TOTAL_WAVES)return;
+  const w=state.wave+1;
+  state.wave=w;updateStats();updateNextWaveCard();
+  computeField();
+  const def=WAVES[w-1];
+  state.spawnQueue=[];for(let i=0;i<def.count;i++)state.spawnQueue.push({dirs:def.dirs,w});
+  state.spawnTimer=0;state.enemies=[];state.shots=[];state.running=true;
+  document.getElementById('go').disabled=true;
+}
+function endWave(){
+  state.running=false;
+  state.gold+=25+state.wave*5;
+  refillEmptySlots(REFILL_PER_WAVE);
+  document.getElementById('go').disabled=false;
+  updateStats();
+  if(state.wave>=TOTAL_WAVES)flash('승리','코어를 끝까지 지켜냈습니다.','win',true);
+  else updateNextWaveCard();
+}
+
+// ── 루프 ──
+let last=0;
+function loop(ts){const dt=Math.min(40,ts-last);last=ts;if(state.running)step(dt);draw();requestAnimationFrame(loop);}
+
+function step(dt){
+  // 스폰(불규칙 간격 + 가끔 다른 방향에서 동시 2마리)
+  state.spawnTimer-=dt;
+  if(state.spawnQueue.length>0&&state.spawnTimer<=0){
+    const s=state.spawnQueue.shift();spawnEnemy(s.dirs,s.w);
+    if(state.spawnQueue.length>0&&Math.random()<0.35){const s2=state.spawnQueue.shift();spawnEnemy(s2.dirs,s2.w);}
+    state.spawnTimer=SPAWN_MIN+Math.random()*(SPAWN_MAX-SPAWN_MIN);
+  }
+
+  // 적 이동/공격
+  for(const e of state.enemies){
+    if(e.state==='decide'){
+      // 코어에 가까워지는(비용 감소) 이웃 중에서 무작위 선택 → 경로가 사방으로 퍼짐
+      const cd=field.dist[e.cy][e.cx];
+      const opts=[];
+      for(const [dx,dy] of DIRS){const nx=e.cx+dx,ny=e.cy+dy;
+        if(nx<0||nx>=COLS||ny<0||ny>=ROWS)continue;
+        if(field.dist[ny][nx]<cd)opts.push({x:nx,y:ny,v:grid[ny][nx]});
+      }
+      const core=opts.find(o=>o.x===CORE.x&&o.y===CORE.y);
+      if(core){e.state='atkCore';e.atkCd=0;}
+      else if(opts.length){
+        // 최단(비용) 이웃을 따라감. 동률일 때만 열린 길 선호 → 돌아가는 게 더 길면 벽을 뚫는다
+        const md=Math.min(...opts.map(o=>field.dist[o.y][o.x]));
+        const best=opts.filter(o=>field.dist[o.y][o.x]===md);
+        const openBest=best.filter(o=>o.v===EMPTY);
+        const pool=openBest.length?openBest:best;
+        const o=pool[(Math.random()*pool.length)|0];
+        if(o.v===WALL){e.state='atkWall';e.wall={x:o.x,y:o.y};e.atkCd=0;}
+        else {e.state='move';e.tx=o.x;e.ty=o.y;}
+      }
+      else {e.state='idle';}
+    }
+    if(e.state==='move'){
+      const tcx=(e.tx+0.5)*CELL,tcy=(e.ty+0.5)*CELL;
+      const dx=tcx-e.px,dy=tcy-e.py,d=Math.hypot(dx,dy);
+      const spd=e.speed*CELL*dt/1000;
+      if(d<=spd){e.px=tcx;e.py=tcy;e.cx=e.tx;e.cy=e.ty;e.state='decide';}
+      else{e.px+=dx/d*spd;e.py+=dy/d*spd;}
+    } else if(e.state==='atkWall'){
+      const c=cells[key(e.wall.x,e.wall.y)];
+      if(!c||grid[e.wall.y][e.wall.x]!==WALL){e.state='decide';}
+      else{e.atkCd-=dt;if(e.atkCd<=0){e.atkCd=ENEMY_WALL_INT;
+        c.hp-=ENEMY_WALL_DMG;
+        if(c.hp<=0){if(c.merge)dissolveMerge(c.merge);destroyCell(e.wall.x,e.wall.y);e.state='decide';}
+      }}
+    } else if(e.state==='atkCore'){
+      e.atkCd-=dt;if(e.atkCd<=0){state.coreHp-=ENEMY_CORE_DMG;e.atkCd=ENEMY_CORE_INT;updateStats();
+        if(state.coreHp<=0){state.coreHp=0;state.running=false;flash('패배','코어가 파괴되었습니다.','lose',true);return;}}
+    }
+  }
+
+  // 포탑 사격 (개별 셀, 머지 셀 제외)
+  for(const k in cells){
+    const c=cells[k];if(c.merge)continue;
+    c.cd-=dt;if(c.cd>0)continue;
+    const p=k.split(',');const bx=+p[0],by=+p[1];
+    let best=null,bestScore=Infinity;
+    for(const e of state.enemies){
+      const d=Math.hypot(e.px/CELL-(bx+0.5),e.py/CELL-(by+0.5));
+      if(d<=TURRET_RANGE){const sc=field.dist[e.cy][e.cx];if(sc<bestScore){bestScore=sc;best=e;}}
+    }
+    if(best){best.hp-=TURRET_DMG;c.cd=TURRET_CD;state.shots.push({fx:(bx+0.5)*CELL,fy:(by+0.5)*CELL,tx:best.px,ty:best.py,t:110});}
+  }
+  // 중포탑 사격 (머지 유닛, 스플래시)
+  for(const m of merges){
+    m.cd-=dt;if(m.cd>0)continue;
+    let best=null,bestScore=Infinity;
+    for(const e of state.enemies){
+      const d=Math.hypot(e.px/CELL-m.cx,e.py/CELL-m.cy);
+      if(d<=MERGE2_RANGE){const sc=field.dist[e.cy][e.cx];if(sc<bestScore){bestScore=sc;best=e;}}
+    }
+    if(best){
+      best.hp-=MERGE2_DMG;
+      for(const e2 of state.enemies){if(e2===best)continue;const d=Math.hypot(e2.px-best.px,e2.py-best.py)/CELL;if(d<=MERGE2_SPLASH)e2.hp-=MERGE2_DMG*0.6;}
+      m.cd=MERGE2_CD;
+      state.shots.push({fx:m.cx*CELL,fy:m.cy*CELL,tx:best.px,ty:best.py,t:130,big:true});
+    }
+  }
+  // 처치 정산
+  for(const e of state.enemies) if(e.hp<=0) e.dead=true;
+  let killed=0;
+  state.enemies=state.enemies.filter(e=>{if(e.dead){killed++;return false;}return true;});
+  if(killed){state.gold+=KILL_GOLD*killed;state.score+=killed;updateStats();}
+
+  // 슛 이펙트 감쇠
+  for(const s of state.shots)s.t-=dt;
+  state.shots=state.shots.filter(s=>s.t>0);
+
+  // 웨이브 종료
+  if(state.running&&state.spawnQueue.length===0&&state.enemies.length===0)endWave();
+}
+
+// ── 렌더 ──
+function getCss(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
+function draw(){
+  ctx.fillStyle=getCss('--grid');ctx.fillRect(0,0,cv.width,cv.height);
+  ctx.strokeStyle=getCss('--grid-line');ctx.lineWidth=1;
+  for(let i=0;i<=COLS;i++){ctx.beginPath();ctx.moveTo(i*CELL,0);ctx.lineTo(i*CELL,cv.height);ctx.stroke();}
+  for(let i=0;i<=ROWS;i++){ctx.beginPath();ctx.moveTo(0,i*CELL);ctx.lineTo(cv.width,i*CELL);ctx.stroke();}
+
+  // 블록(벽+포탑) — 개별 셀
+  for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
+    if(grid[y][x]!==WALL)continue;
+    const c=cells[key(x,y)],px=x*CELL,py=y*CELL;
+    if(c&&c.merge){
+      const r=c?c.hp/c.max:1;
+      ctx.fillStyle=getCss('--accent');ctx.fillRect(px+1,py+1,CELL-2,CELL-2);
+      ctx.fillStyle='rgba(255,255,255,.18)';ctx.fillRect(px+1,py+1,CELL-2,3);
+      if(r<1){ctx.fillStyle='#000';ctx.fillRect(px+3,py+CELL-6,CELL-6,3);ctx.fillStyle=r>.4?getCss('--hp'):getCss('--hplow');ctx.fillRect(px+3,py+CELL-6,(CELL-6)*r,3);}
+    } else {
+      const r=c?c.hp/c.max:1;
+      ctx.fillStyle=getCss('--wall');ctx.fillRect(px+1,py+1,CELL-2,CELL-2);
+      ctx.fillStyle=getCss('--wall-top');ctx.fillRect(px+1,py+1,CELL-2,3);
+      ctx.fillStyle=getCss('--turret');ctx.fillRect(px+CELL/2-4,py+CELL/2-4,8,8);
+      ctx.fillStyle=getCss('--turret-core');ctx.beginPath();ctx.arc(px+CELL/2,py+CELL/2,2.5,0,7);ctx.fill();
+      if(r<1){ctx.fillStyle='#000';ctx.fillRect(px+3,py+CELL-6,CELL-6,3);ctx.fillStyle=r>.4?getCss('--hp'):getCss('--hplow');ctx.fillRect(px+3,py+CELL-6,(CELL-6)*r,3);}
+    }
+  }
+  // 머지 유닛(중포탑) 오버레이
+  for(const m of merges){
+    const cxp=m.cx*CELL,cyp=m.cy*CELL;
+    ctx.strokeStyle=getCss('--turret');ctx.lineWidth=2;ctx.strokeRect(m.tx*CELL+2,m.ty*CELL+2,2*CELL-4,2*CELL-4);
+    ctx.fillStyle=getCss('--turret');ctx.beginPath();ctx.arc(cxp,cyp,8,0,7);ctx.fill();
+    ctx.fillStyle=getCss('--turret-core');ctx.beginPath();ctx.arc(cxp,cyp,4,0,7);ctx.fill();
+  }
+
+  // 코어
+  (function(){const px=CORE.x*CELL,py=CORE.y*CELL,r=state.coreHp/CORE_MAX;
+    ctx.fillStyle=getCss('--core');ctx.fillRect(px+2,py+2,CELL-4,CELL-4);
+    ctx.strokeStyle=getCss('--core-edge');ctx.lineWidth=2;ctx.strokeRect(px+2,py+2,CELL-4,CELL-4);
+    ctx.fillStyle='#000';ctx.font='bold 8px monospace';ctx.textAlign='center';ctx.fillText('CORE',px+CELL/2,py+CELL/2+3);ctx.textAlign='start';
+    ctx.fillStyle='#000';ctx.fillRect(px+3,py+CELL-6,CELL-6,3);ctx.fillStyle=r>.4?getCss('--hp'):getCss('--hplow');ctx.fillRect(px+3,py+CELL-6,(CELL-6)*r,3);
+  })();
+
+  // 배치/수리 미리보기
+  if(state.hover){
+    const {gx,gy}=state.hover;
+    if(state.mode==='build'){
+      const b=state.tray[state.activeSlot];
+      if(b){const mat=b.mat,ok=canPlaceBlock(mat,gx,gy);ctx.globalAlpha=.5;ctx.fillStyle=ok?getCss('--turret'):getCss('--hplow');
+        for(let y=0;y<mat.length;y++)for(let x=0;x<mat[0].length;x++)if(mat[y][x]){const cx=gx+x,cy=gy+y;if(cx<COLS&&cy<ROWS)ctx.fillRect(cx*CELL+1,cy*CELL+1,CELL-2,CELL-2);}
+        ctx.globalAlpha=1;
+        // 머지 미리보기: 이걸 놓으면 2x2로 합쳐질 자리
+        if(ok){const quads=previewMergeQuads(mat,gx,gy);ctx.setLineDash([4,3]);ctx.strokeStyle=getCss('--accent');ctx.lineWidth=2;
+          for(const [qx,qy] of quads)ctx.strokeRect(qx*CELL+2,qy*CELL+2,2*CELL-4,2*CELL-4);ctx.setLineDash([]);}
+      }
+    } else {
+      let ok;
+      if(gx===CORE.x&&gy===CORE.y) ok=state.coreHp<CORE_MAX&&state.gold>=CORE_REPAIR_COST;
+      else{const c=cells[key(gx,gy)];ok=c&&c.hp<c.max&&state.gold>=REPAIR_COST;}
+      ctx.globalAlpha=.4;ctx.fillStyle=ok?getCss('--hp'):getCss('--hplow');ctx.fillRect(gx*CELL+2,gy*CELL+2,CELL-4,CELL-4);ctx.globalAlpha=1;
+    }
+  }
+
+  // 적
+  for(const e of state.enemies){
+    ctx.fillStyle=getCss('--enemy');ctx.beginPath();ctx.arc(e.px,e.py,CELL*0.3,0,7);ctx.fill();
+    ctx.strokeStyle=getCss('--enemy-edge');ctx.lineWidth=2;ctx.stroke();
+    const w=CELL*0.6,r=e.hp/e.max;
+    ctx.fillStyle='#000';ctx.fillRect(e.px-w/2,e.py-CELL*0.42,w,4);
+    ctx.fillStyle=getCss('--hp');ctx.fillRect(e.px-w/2,e.py-CELL*0.42,w*r,4);
+  }
+
+  // 사격 이펙트
+  for(const s of state.shots){const a=Math.min(1,s.t/110)*.9;ctx.strokeStyle=s.big?'rgba(188,140,255,'+a+')':'rgba(165,214,255,'+a+')';ctx.lineWidth=s.big?3:1.5;ctx.beginPath();ctx.moveTo(s.fx,s.fy);ctx.lineTo(s.tx,s.ty);ctx.stroke();}
+}
+
+// ── UI ──
+function renderTray(){
+  const tray=document.getElementById('tray');tray.innerHTML='';
+  state.tray.forEach((b,i)=>{
+    const slot=document.createElement('div');
+    if(b){slot.className='slot'+(i===state.activeSlot?' active':'');
+      const c=document.createElement('canvas');c.width=56;c.height=56;const cc=c.getContext('2d');const m=b.mat;
+      const w=m[0].length,h=m.length,cs=11,ox=(56-w*cs)/2,oy=(56-h*cs)/2;
+      cc.fillStyle=getCss('--turret');for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(m[y][x])cc.fillRect(ox+x*cs,oy+y*cs,cs-1,cs-1);
+      slot.appendChild(c);slot.onclick=()=>{state.activeSlot=i;setMode('build');renderTray();};
+    } else {const broke=state.gold<BUY_COST;slot.className='slot empty'+(broke?' broke':'');slot.title=broke?'골드 부족':'15골드 구매';slot.onclick=()=>{if(!broke)buyBlockToSlot(i);};}
+    tray.appendChild(slot);
+  });
+  document.getElementById('tray-count').textContent=state.tray.filter(b=>b).length+'/'+TRAY_SIZE;
+}
+function setMode(m){state.mode=m;document.getElementById('m-build').classList.toggle('on',m==='build');document.getElementById('m-repair').classList.toggle('on',m==='repair');}
+document.getElementById('m-build').onclick=()=>setMode('build');
+document.getElementById('m-repair').onclick=()=>setMode('repair');
+
+function cellFromEvent(ev){const r=cv.getBoundingClientRect();return {gx:Math.floor((ev.clientX-r.left)/r.width*COLS),gy:Math.floor((ev.clientY-r.top)/r.height*ROWS)};}
+cv.addEventListener('mousemove',ev=>{state.hover=cellFromEvent(ev);});
+cv.addEventListener('mouseleave',()=>state.hover=null);
+cv.addEventListener('contextmenu',ev=>{ev.preventDefault();if(state.mode==='build'){const b=state.tray[state.activeSlot];if(b){b.mat=rotate(b.mat);renderTray();}}});
+cv.addEventListener('click',ev=>{
+  const {gx,gy}=cellFromEvent(ev);
+  if(state.mode==='build'){const b=state.tray[state.activeSlot];if(!b)return;if(canPlaceBlock(b.mat,gx,gy)){placeBlock(b.mat,gx,gy);setSlotEmpty(state.activeSlot);updateStats();}}
+  else{repairAt(gx,gy);}
+});
+window.addEventListener('keydown',ev=>{if(ev.key==='r'||ev.key==='R'){const b=state.tray[state.activeSlot];if(b){b.mat=rotate(b.mat);renderTray();}}});
+document.getElementById('go').onclick=startWave;
+document.getElementById('msg-btn').onclick=()=>location.reload();
+
+function updateStats(){
+  document.getElementById('s-core').textContent=Math.max(0,state.coreHp);
+  document.getElementById('s-gold').textContent=state.gold;
+  document.getElementById('s-wave').textContent=state.wave;
+  document.getElementById('s-score').textContent=state.score;
+  const go=document.getElementById('go');
+  if(state.wave>=TOTAL_WAVES&&!state.running){go.textContent='완료';go.disabled=true;}
+  renderTray();
+}
+function updateNextWaveCard(){
+  const idx=state.wave;
+  if(idx>=TOTAL_WAVES){['nw-num','nw-cnt','nw-hp','nw-dir'].forEach(id=>document.getElementById(id).textContent='-');return;}
+  const w=WAVES[idx];
+  document.getElementById('nw-num').textContent=(idx+1)+'/'+TOTAL_WAVES;
+  document.getElementById('nw-cnt').textContent=w.count+'마리';
+  document.getElementById('nw-hp').textContent=enemyHpFor(idx+1);
+  document.getElementById('nw-dir').textContent=w.dirs.map(d=>DIR_LABEL[d]).join('·');
+}
+function flash(title,text,cls,reload){
+  document.getElementById('msg-title').textContent=title;
+  document.getElementById('msg-text').textContent=text;
+  document.getElementById('msg-box').className='msg-box '+cls;
+  document.getElementById('msg-btn').textContent=reload?'다시 시작':'닫기';
+  document.getElementById('msg').classList.add('show');
+}
+
+// ── 시작 ──
+initGrid();computeField();initTray();updateStats();updateNextWaveCard();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
