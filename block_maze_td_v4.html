@@ -103,7 +103,7 @@
       <h2>다음 웨이브 <span class="tag" id="nw-num">1/8</span></h2>
       <div class="next-wave">
         <div class="row"><span>적 수</span><span id="nw-cnt">6</span></div>
-        <div class="row"><span>적 체력</span><span id="nw-hp">23</span></div>
+        <div class="row"><span>구성</span><span id="nw-hp">정령</span></div>
         <div class="row"><span>스폰 방향</span><span id="nw-dir">사방</span></div>
       </div>
     </div>
@@ -170,20 +170,34 @@ const ENEMY_WALL_DMG=14, ENEMY_WALL_INT=300;           // 벽 타격
 const ENEMY_CORE_DMG=6, ENEMY_CORE_INT=500;            // 코어 타격
 
 const ALL_DIRS=['N','S','W','E'];
+// 적 유형: 각자 다른 대응을 강요 (경로/벽/머지 시스템을 각각 시험)
+const ETYPES={
+  grunt:  {name:'정령',   short:'정령', col:'#c56bff', hpMul:1.0,  spdMul:1.0,  wallMul:1.0, reward:6,  size:0.60, digBias:0},
+  runner: {name:'돌격병', short:'돌격', col:'#5ce1e6', hpMul:0.5,  spdMul:1.7,  wallMul:0.4, reward:5,  size:0.48, digBias:-1}, // 벽 회피, 열린 길 질주
+  breaker:{name:'파괴자', short:'파괴', col:'#ff7b54', hpMul:2.0,  spdMul:0.75, wallMul:2.2, reward:12, size:0.74, digBias:1},  // 벽 우선 공략
+  swarm:  {name:'군체',   short:'군체', col:'#a6ff7c', hpMul:0.35, spdMul:1.15, wallMul:0.6, reward:3,  size:0.40, digBias:0},  // 다수·버스트
+};
+// 웨이브 구성(유형:가중치). 점진적 등장으로 온보딩
 const WAVES=[
-  {count:6,  dirs:ALL_DIRS},
-  {count:8,  dirs:ALL_DIRS},
-  {count:10, dirs:ALL_DIRS},
-  {count:12, dirs:ALL_DIRS},
-  {count:14, dirs:ALL_DIRS},
-  {count:16, dirs:ALL_DIRS},
-  {count:18, dirs:ALL_DIRS},
-  {count:22, dirs:ALL_DIRS},
+  {count:6,  comp:{grunt:1}},
+  {count:8,  comp:{grunt:1}},
+  {count:10, comp:{grunt:3, runner:2}},
+  {count:12, comp:{grunt:2, runner:2, breaker:1}},
+  {count:14, comp:{grunt:2, runner:2, breaker:1, swarm:2}},
+  {count:16, comp:{grunt:2, runner:2, breaker:2, swarm:3}},
+  {count:18, comp:{grunt:2, runner:2, breaker:2, swarm:4}},
+  {count:22, comp:{grunt:2, runner:3, breaker:3, swarm:5}},
 ];
 const TOTAL_WAVES=WAVES.length;
-function enemyHpFor(w){ return 32 + w*14; }       // w는 1부터
+function enemyHpFor(w){ return 32 + w*14; }       // w는 1부터 (기본 배수 1.0 기준)
 function enemySpeedFor(w){ return 1.25 + w*0.07; } // cells/sec
-const DIR_LABEL={W:'서',E:'동',N:'북',S:'남'};
+// 구성에서 count만큼 유형 뽑아 섞기
+function buildWaveTypes(comp,count){
+  const bag=[];for(const k in comp)for(let i=0;i<comp[k];i++)bag.push(k);
+  const out=[];for(let i=0;i<count;i++)out.push(bag[(Math.random()*bag.length)|0]);
+  for(let i=out.length-1;i>0;i--){const j=(Math.random()*(i+1))|0;[out[i],out[j]]=[out[j],out[i]];}
+  return out;
+}
 
 const SHAPES={I:[[1,1,1,1]],O:[[1,1],[1,1]],T:[[1,1,1],[0,1,0]],L:[[1,0],[1,0],[1,1]],J:[[0,1],[0,1],[1,1]],S:[[0,1,1],[1,1,0]],Z:[[1,1,0],[0,1,1]]};
 const KEYS=Object.keys(SHAPES);
@@ -352,13 +366,16 @@ function borderCellsFor(dirs){
   for(let y=0;y<ROWS;y++){if(dirs.includes('W'))list.push([0,y]);if(dirs.includes('E'))list.push([COLS-1,y]);}
   return list;
 }
-function spawnEnemy(dirs,w){
-  const opts=borderCellsFor(dirs).filter(([x,y])=>grid[y][x]===EMPTY);
-  const pool=opts.length?opts:borderCellsFor(dirs);
+function spawnEnemy(type){
+  const t=ETYPES[type];
+  const opts=borderCellsFor(ALL_DIRS).filter(([x,y])=>grid[y][x]===EMPTY);
+  const pool=opts.length?opts:borderCellsFor(ALL_DIRS);
   const [sx,sy]=pool[Math.floor(Math.random()*pool.length)];
-  const hp=enemyHpFor(w);
-  state.enemies.push({cx:sx,cy:sy,px:(sx+0.5)*CELL,py:(sy+0.5)*CELL,tx:sx,ty:sy,
-    hp,max:hp,speed:enemySpeedFor(w),state:'decide',atkCd:0,dead:false});
+  const hp=Math.round(enemyHpFor(state.wave)*t.hpMul);
+  state.enemies.push({type,cx:sx,cy:sy,px:(sx+0.5)*CELL,py:(sy+0.5)*CELL,tx:sx,ty:sy,
+    hp,max:hp,speed:enemySpeedFor(state.wave)*t.spdMul,
+    wallDmg:Math.max(1,Math.round(ENEMY_WALL_DMG*t.wallMul)),digBias:t.digBias,
+    reward:t.reward,col:t.col,size:t.size,state:'decide',atkCd:0,dead:false});
 }
 
 // ── 웨이브 ──
@@ -368,7 +385,7 @@ function startWave(){
   state.wave=w;updateStats();updateNextWaveCard();
   computeField();
   const def=WAVES[w-1];
-  state.spawnQueue=[];for(let i=0;i<def.count;i++)state.spawnQueue.push({dirs:def.dirs,w});
+  state.spawnQueue=buildWaveTypes(def.comp,def.count);
   state.spawnTimer=0;state.enemies=[];state.shots=[];state.running=true;
   document.getElementById('go').disabled=true;
 }
@@ -390,8 +407,9 @@ function step(dt){
   // 스폰(불규칙 간격 + 가끔 다른 방향에서 동시 2마리)
   state.spawnTimer-=dt;
   if(state.spawnQueue.length>0&&state.spawnTimer<=0){
-    const s=state.spawnQueue.shift();spawnEnemy(s.dirs,s.w);
-    if(state.spawnQueue.length>0&&Math.random()<0.35){const s2=state.spawnQueue.shift();spawnEnemy(s2.dirs,s2.w);}
+    const type=state.spawnQueue.shift();spawnEnemy(type);
+    if(type==='swarm'){let b=0;while(state.spawnQueue.length&&state.spawnQueue[0]==='swarm'&&b<2){spawnEnemy(state.spawnQueue.shift());b++;}}
+    else if(state.spawnQueue.length&&Math.random()<0.3){spawnEnemy(state.spawnQueue.shift());}
     state.spawnTimer=SPAWN_MIN+Math.random()*(SPAWN_MAX-SPAWN_MIN);
   }
 
@@ -408,12 +426,16 @@ function step(dt){
       const core=opts.find(o=>o.x===CORE.x&&o.y===CORE.y);
       if(core){e.state='atkCore';e.atkCd=0;}
       else if(opts.length){
-        // 최단(비용) 이웃을 따라감. 동률일 때만 열린 길 선호 → 돌아가는 게 더 길면 벽을 뚫는다
-        const md=Math.min(...opts.map(o=>field.dist[o.y][o.x]));
-        const best=opts.filter(o=>field.dist[o.y][o.x]===md);
-        const openBest=best.filter(o=>o.v===EMPTY);
-        const pool=openBest.length?openBest:best;
-        const o=pool[(Math.random()*pool.length)|0];
+        // 유형별 성향(digBias)으로 후보를 고른 뒤 최단(비용) 선택
+        const open=opts.filter(o=>o.v===EMPTY), walls=opts.filter(o=>o.v===WALL);
+        let cand;
+        if(e.digBias<0) cand = open.length?open:walls;        // 돌격병: 벽 회피(열린 길 질주)
+        else if(e.digBias>0) cand = walls.length?walls:open;  // 파괴자: 벽 우선 공략
+        else cand = opts;                                     // 기본
+        const md=Math.min(...cand.map(o=>field.dist[o.y][o.x]));
+        let best=cand.filter(o=>field.dist[o.y][o.x]===md);
+        if(e.digBias===0){const ob=best.filter(o=>o.v===EMPTY);if(ob.length)best=ob;} // 기본은 동률 시 열린 길
+        const o=best[(Math.random()*best.length)|0];
         if(o.v===WALL){e.state='atkWall';e.wall={x:o.x,y:o.y};e.atkCd=0;}
         else {e.state='move';e.tx=o.x;e.ty=o.y;}
       }
@@ -429,7 +451,7 @@ function step(dt){
       const c=cells[key(e.wall.x,e.wall.y)];
       if(!c||grid[e.wall.y][e.wall.x]!==WALL){e.state='decide';}
       else{e.atkCd-=dt;if(e.atkCd<=0){e.atkCd=ENEMY_WALL_INT;
-        c.hp-=ENEMY_WALL_DMG;
+        c.hp-=e.wallDmg;
         if(c.hp<=0){if(c.merge)dissolveMerge(c.merge);destroyCell(e.wall.x,e.wall.y);e.state='decide';}
       }}
     } else if(e.state==='atkCore'){
@@ -482,11 +504,11 @@ function step(dt){
       }
     }
   }
-  // 처치 정산
+  // 처치 정산 (유형별 보상)
   for(const e of state.enemies) if(e.hp<=0) e.dead=true;
-  let killed=0;
-  state.enemies=state.enemies.filter(e=>{if(e.dead){killed++;return false;}return true;});
-  if(killed){state.gold+=KILL_GOLD*killed;state.score+=killed;updateStats();}
+  let killed=0,gold=0;
+  state.enemies=state.enemies.filter(e=>{if(e.dead){killed++;gold+=(e.reward||KILL_GOLD);return false;}return true;});
+  if(killed){state.gold+=gold;state.score+=killed;updateStats();}
 
   // 슛 이펙트 감쇠
   for(const s of state.shots)s.t-=dt;
@@ -603,22 +625,22 @@ function draw(){
     }
   }
 
-  // 적 — 떠다니는 그림자 정령
+  // 적 — 떠다니는 정령(유형별 색·크기)
   for(const e of state.enemies){
-    const s=Math.round(CELL*0.6),hs=s>>1;
+    const s=Math.max(8,Math.round(CELL*(e.size||0.6))),hs=s>>1;
     const bob=Math.sin(clock/260+e.px*0.3)*2;
     const bx=Math.round(e.px-hs),by=Math.round(e.py-hs+bob);
     ctx.fillStyle='rgba(0,0,0,.35)';ctx.fillRect(bx+2,by+s-1,s-4,3);
-    ctx.fillStyle=PAL.wraith;ctx.fillRect(bx,by,s,s);
-    ctx.fillStyle=PAL.wraithLit;ctx.fillRect(bx,by,s,2);ctx.fillRect(bx,by,2,s);
-    ctx.fillStyle=PAL.wraithDark;ctx.fillRect(bx,by+s-2,s,2);ctx.fillRect(bx+s-2,by,2,s);
+    ctx.fillStyle=e.col||PAL.wraith;ctx.fillRect(bx,by,s,s);
+    ctx.fillStyle='rgba(255,255,255,.28)';ctx.fillRect(bx,by,s,2);ctx.fillRect(bx,by,2,s);
+    ctx.fillStyle='rgba(0,0,0,.32)';ctx.fillRect(bx,by+s-2,s,2);ctx.fillRect(bx+s-2,by,2,s);
     ctx.save();ctx.shadowColor=PAL.eye;ctx.shadowBlur=6;ctx.fillStyle=PAL.eye;
     ctx.fillRect(bx+Math.round(s*0.24),by+Math.round(s*0.42),3,3);
     ctx.fillRect(bx+Math.round(s*0.60),by+Math.round(s*0.42),3,3);
     ctx.restore();
-    const w=s,r=e.hp/e.max;
-    ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(bx,by-6,w,3);
-    ctx.fillStyle=r>.4?PAL.hp:PAL.hpLow;ctx.fillRect(bx,by-6,w*r,3);
+    const r=e.hp/e.max;
+    ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(bx,by-6,s,3);
+    ctx.fillStyle=r>.4?PAL.hp:PAL.hpLow;ctx.fillRect(bx,by-6,s*r,3);
   }
 
   // 마력탄 이펙트
@@ -680,8 +702,8 @@ function updateNextWaveCard(){
   const w=WAVES[idx];
   document.getElementById('nw-num').textContent=(idx+1)+'/'+TOTAL_WAVES;
   document.getElementById('nw-cnt').textContent=w.count+'마리';
-  document.getElementById('nw-hp').textContent=enemyHpFor(idx+1);
-  document.getElementById('nw-dir').textContent=w.dirs.map(d=>DIR_LABEL[d]).join('·');
+  document.getElementById('nw-hp').textContent=Object.keys(w.comp).map(k=>ETYPES[k].short).join('·');
+  document.getElementById('nw-dir').textContent='사방';
 }
 function flash(title,text,cls,reload){
   document.getElementById('msg-title').textContent=title;
