@@ -33,17 +33,22 @@
     -webkit-background-clip:text;background-clip:text;color:transparent;
   }
   header p{color:var(--muted);font-size:13px;margin-top:6px;letter-spacing:.02em}
-  .stage{display:flex;gap:18px;flex-wrap:wrap;justify-content:center;align-items:flex-start}
-  .board-wrap{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;box-shadow:0 10px 40px rgba(0,0,0,.4)}
-  canvas{display:block;border-radius:8px;cursor:pointer;touch-action:none}
-  .side{width:244px;display:flex;flex-direction:column;gap:13px}
+  .stage{display:flex;flex-direction:column;gap:13px;align-items:center;width:100%;max-width:540px;margin:0 auto}
+  .board-wrap{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;box-shadow:0 10px 40px rgba(0,0,0,.4);width:100%;display:flex;justify-content:center}
+  canvas{display:block;border-radius:8px;cursor:pointer;touch-action:none;width:100%;max-width:510px;height:auto}
+  .side{width:100%;display:flex;flex-direction:column;gap:12px}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:13px}
   .card h2{font-size:11px;letter-spacing:.18em;color:var(--muted);text-transform:uppercase;margin-bottom:9px;font-weight:500;display:flex;justify-content:space-between;align-items:center}
   .card h2 .tag{color:var(--accent);font-size:10px}
-  .stats{display:grid;grid-template-columns:1fr 1fr;gap:9px}
-  .stat{background:var(--grid);border:1px solid var(--grid-line);border-radius:8px;padding:7px 10px}
-  .stat .v{font-family:'Bebas Neue',sans-serif;font-size:25px;line-height:1}
-  .stat .l{font-size:10px;color:var(--muted);letter-spacing:.08em;margin-top:2px}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .stat{background:var(--grid);border:1px solid var(--grid-line);border-radius:8px;padding:7px 8px;text-align:center}
+  .stat .v{font-family:'Bebas Neue',sans-serif;font-size:24px;line-height:1}
+  .stat .l{font-size:9px;color:var(--muted);letter-spacing:.06em;margin-top:2px}
+  .nw-card{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+  .nw-card b{color:var(--accent)} #nw-line{color:var(--ink);text-align:right}
+  .buybtn{width:100%;margin-top:8px;background:var(--grid);border:1px solid var(--grid-line);color:var(--ink);border-radius:8px;padding:10px;font-family:var(--font);font-size:12px;cursor:pointer;transition:.12s;letter-spacing:.02em}
+  .buybtn:hover{border-color:var(--gold)} .buybtn b{color:var(--gold)}
+  .buybtn:disabled{opacity:.4;cursor:not-allowed}
   .stat.core .v{color:var(--core)} .stat.gold .v{color:var(--gold)}
   .stat.wave .v{color:var(--accent)} .stat.score .v{color:var(--turret)}
   .tray{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
@@ -87,10 +92,9 @@
 </header>
 
 <div class="stage">
-  <div class="board-wrap"><canvas id="board"></canvas></div>
+  <!-- 상단: 상황 + 다음 웨이브 (한눈에) -->
   <div class="side">
     <div class="card">
-      <h2>상황</h2>
       <div class="stats">
         <div class="stat core"><div class="v" id="s-core">30</div><div class="l">코어 HP</div></div>
         <div class="stat gold"><div class="v" id="s-gold">120</div><div class="l">골드</div></div>
@@ -98,24 +102,19 @@
         <div class="stat score"><div class="v" id="s-score">0</div><div class="l">처치</div></div>
       </div>
     </div>
-
-    <div class="card">
-      <h2>다음 웨이브 <span class="tag" id="nw-num">1/8</span></h2>
-      <div class="next-wave">
-        <div class="row"><span>적 수</span><span id="nw-cnt">6</span></div>
-        <div class="row"><span>구성</span><span id="nw-hp">정령</span></div>
-        <div class="row"><span>스폰 방향</span><span id="nw-dir">사방</span></div>
-      </div>
+    <div class="card nw-card">
+      <span>다음 웨이브 <b id="nw-num">1/8</b></span>
+      <span id="nw-line">적 6 · 정령 · 사방</span>
     </div>
+    <button class="go" id="go">웨이브 시작</button>
+  </div>
 
-    <div class="card">
-      <h2>블록 트레이 <span class="tag" id="tray-count">5/5</span></h2>
-      <div class="tray" id="tray"></div>
-      <p class="buy-hint">빈 슬롯 클릭 = <b>15골드</b> 구매 · <b>R</b>/우클릭 회전</p>
-    </div>
+  <!-- 보드 -->
+  <div class="board-wrap"><canvas id="board"></canvas></div>
 
+  <!-- 하단: 조작 (트레이 / 모드) -->
+  <div class="side">
     <div class="card">
-      <h2>모드</h2>
       <div class="mode-row">
         <button class="mode-btn on" id="m-build" data-mode="build">건설<span class="sub">조각 배치</span></button>
         <button class="mode-btn" id="m-repair" data-mode="repair">수리<span class="sub">벽10·코어15</span></button>
@@ -124,9 +123,15 @@
     </div>
 
     <div class="card">
-      <button class="go" id="go">웨이브 시작</button>
-      <p class="hint" style="margin-top:11px">
-        웨이브 <b class="k">사이</b>엔 자유 건설, 전투 <b class="k">중</b>엔 조각으로 구멍 메우기·<b class="g">골드 수리</b>. <b>2×2</b>=중포탑(스플래시), <b>일직선 4칸+</b>=<b class="k">관통 라인</b>. 1칸이라도 깨지면 일반 타일로 풀리니 다시 채워 <b class="k">재머지</b>. 코어 HP 0이면 게임오버.
+      <h2>블록 트레이 <span class="tag" id="tray-count">5/5</span></h2>
+      <div class="tray" id="tray"></div>
+      <button class="buybtn" id="buy">블록 구매 <b>+1</b> · 15골드</button>
+      <p class="buy-hint"><b>R</b>/우클릭으로 회전</p>
+    </div>
+
+    <div class="card">
+      <p class="hint">
+        웨이브 <b class="k">사이</b>엔 자유 건설, 전투 <b class="k">중</b>엔 조각으로 구멍 메우기·<b class="g">골드 수리</b>. <b>2×2</b>=중포탑(스플래시), <b>일직선 4칸+</b>=<b class="k">관통 라인</b>. 1칸이라도 깨지면 풀리니 다시 채워 <b class="k">재머지</b>(또는 재결합). 코어 HP 0이면 게임오버.
       </p>
     </div>
   </div>
@@ -220,6 +225,7 @@ function initTray(){state.tray=Array.from({length:TRAY_SIZE},()=>randBlock());st
 function pickFirstAvailableSlot(){if(state.tray[state.activeSlot])return;const idx=state.tray.findIndex(b=>b);if(idx>=0){state.activeSlot=idx;renderTray();}}
 function refillEmptySlots(n){let f=0;for(let i=0;i<TRAY_SIZE&&f<n;i++){if(!state.tray[i]){state.tray[i]=randBlock();f++;}}renderTray();pickFirstAvailableSlot();}
 function buyBlockToSlot(i){if(state.tray[i]||state.gold<BUY_COST)return;state.gold-=BUY_COST;state.tray[i]=randBlock();state.activeSlot=i;updateStats();renderTray();}
+function buyBlock(){const i=state.tray.findIndex(b=>!b);if(i<0)return;buyBlockToSlot(i);}
 function setSlotEmpty(i){state.tray[i]=null;renderTray();pickFirstAvailableSlot();}
 
 // ── 경로장(Dijkstra, 코어에서 바깥으로) ──
@@ -664,6 +670,8 @@ function renderTray(){
     tray.appendChild(slot);
   });
   document.getElementById('tray-count').textContent=state.tray.filter(b=>b).length+'/'+TRAY_SIZE;
+  const buy=document.getElementById('buy');
+  if(buy){const full=state.tray.every(b=>b);buy.disabled=full||state.gold<BUY_COST;}
 }
 function setMode(m){state.mode=m;
   document.getElementById('m-build').classList.toggle('on',m==='build');
@@ -685,6 +693,7 @@ cv.addEventListener('click',ev=>{
 });
 window.addEventListener('keydown',ev=>{if(ev.key==='r'||ev.key==='R'){const b=state.tray[state.activeSlot];if(b){b.mat=rotate(b.mat);renderTray();}}});
 document.getElementById('go').onclick=startWave;
+document.getElementById('buy').onclick=buyBlock;
 document.getElementById('msg-btn').onclick=()=>location.reload();
 
 function updateStats(){
@@ -697,13 +706,11 @@ function updateStats(){
   renderTray();
 }
 function updateNextWaveCard(){
-  const idx=state.wave;
-  if(idx>=TOTAL_WAVES){['nw-num','nw-cnt','nw-hp','nw-dir'].forEach(id=>document.getElementById(id).textContent='-');return;}
+  const idx=state.wave, numEl=document.getElementById('nw-num'), lineEl=document.getElementById('nw-line');
+  if(idx>=TOTAL_WAVES){numEl.textContent='완료';lineEl.textContent='-';return;}
   const w=WAVES[idx];
-  document.getElementById('nw-num').textContent=(idx+1)+'/'+TOTAL_WAVES;
-  document.getElementById('nw-cnt').textContent=w.count+'마리';
-  document.getElementById('nw-hp').textContent=Object.keys(w.comp).map(k=>ETYPES[k].short).join('·');
-  document.getElementById('nw-dir').textContent='사방';
+  numEl.textContent=(idx+1)+'/'+TOTAL_WAVES;
+  lineEl.textContent='적 '+w.count+' · '+Object.keys(w.comp).map(k=>ETYPES[k].short).join('·')+' · 사방';
 }
 function flash(title,text,cls,reload){
   document.getElementById('msg-title').textContent=title;
