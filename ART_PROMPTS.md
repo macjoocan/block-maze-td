@@ -73,3 +73,29 @@ A seamless tileable dark stone dungeon floor tile, slightly lighter blue-gray sl
 3. `block_maze_td_v4.html` 브라우저 새로고침 → 자동 반영
 
 **한 번에 다 만들 필요 없습니다.** 만든 것부터 넣으면 그 부분만 교체되고 나머지는 도트 아트로 유지됩니다.
+
+---
+
+## 애니메이션 시트 프롬프트 (선택)
+
+프레임 애니를 원하면 위 단일 스프라이트 대신 **가로 N프레임 시트**로 생성하세요.
+(엔진 설정: `ART`에서 해당 키 `frames:N, fps:...`)
+
+공통 규칙: 모든 프레임 **동일 크기·동일 높이**, 가로로 나란히, 균일한 간격, 투명 배경, 프레임 간 캐릭터 중심 정렬 유지.
+
+### 걷기 루프 (적 공통, 4프레임 예시)
+```
+A horizontal 4-frame walk-cycle sprite sheet of <해당 적 설명 넣기>, 4 evenly spaced frames left to right, identical size and centered subject per frame, smooth looping walk animation, consistent lighting. detailed pixel art, hand-crafted dot art RPG style, crisp outline, transparent background, no text, no grid lines between frames.
+```
+
+### 코어 맥동/회전 (core, 6프레임 예시)
+```
+A horizontal 6-frame animation sprite sheet of a glowing teal-cyan magic crystal core (#5fd6c0) gently pulsing and glowing brighter then dimmer, 6 evenly spaced frames left to right, identical size and centered per frame, seamless loop. detailed pixel art, hand-crafted dot art RPG style, crisp outline, transparent background, no text.
+```
+
+### 타워 젬 반짝임 (gem, 4프레임 예시)
+```
+A horizontal 4-frame sprite sheet of a small faceted teal-cyan gem (#5fd6c0) with a sparkle glint sweeping across, 4 evenly spaced frames left to right, identical size and centered per frame, seamless loop. detailed pixel art, hand-crafted dot art RPG style, crisp outline, transparent background, no text.
+```
+
+> 팁: 생성 AI가 프레임 크기를 균일하게 못 맞추면, 프레임을 개별로 만든 뒤 이미지 편집기에서 같은 크기로 가로 배열해도 됩니다.

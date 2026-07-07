@@ -601,15 +601,19 @@ function rr(x,y,w,h,r){ if(ctx.roundRect){ctx.beginPath();ctx.roundRect(x,y,w,h,
 //   파일이 없으면(로드 실패 시) 기존 절차적 도트 스프라이트로 그대로 폴백합니다.
 //   → 리소스 교체는 이 ART/ART_TILES 객체와 assets/ 폴더만 건드리면 됩니다.
 //   자세한 규칙은 assets/README.md, 생성 프롬프트는 ART_PROMPTS.md 참고.
+//
+//   [애니메이션] frames>1 이면 가로로 이어붙인 스프라이트 시트로 간주해
+//   clock 기준으로 프레임을 순환 재생합니다. frames:1(기본)이면 단일 정지 이미지.
+//   예) 4프레임 걷기 시트 → { src:'enemy_grunt.png', frames:4, fps:8 }
 // ════════════════════════════════════════════════════════════════════
 const ART_BASE='assets/';
-const ART={                 // 캐릭터/오브젝트 스프라이트 (투명 배경 PNG 권장)
-  grunt:  'enemy_grunt.png',
-  runner: 'enemy_runner.png',
-  swarm:  'enemy_swarm.png',
-  breaker:'enemy_breaker.png',
-  core:   'core.png',
-  gem:    'tower_gem.png',
+const ART={                 // 캐릭터/오브젝트 스프라이트 (투명 배경 PNG). frames=가로 프레임 수
+  grunt:  { src:'enemy_grunt.png',   frames:1, fps:8  },
+  runner: { src:'enemy_runner.png',  frames:1, fps:10 },
+  swarm:  { src:'enemy_swarm.png',   frames:1, fps:8  },
+  breaker:{ src:'enemy_breaker.png', frames:1, fps:6  },
+  core:   { src:'core.png',          frames:1, fps:6  },
+  gem:    { src:'tower_gem.png',      frames:1, fps:8  },
 };
 const ART_TILES={           // 바닥 타일 (선택). 없으면 체커 컬러로 폴백
   floorA:'floor_a.png',
@@ -618,11 +622,12 @@ const ART_TILES={           // 바닥 타일 (선택). 없으면 체커 컬러�
 let tileImgs={};
 function loadArt(){
   for(const k in ART){
+    const cfg=(typeof ART[k]==='string')?{src:ART[k]}:ART[k];   // 문자열도 허용
     const procH=sprites[k]?sprites[k].height:null;   // 도트 원본 높이 = 목표 표시 크기 기준
     const img=new Image();
-    img.onload=()=>{ if(procH)img._scaleAdj=procH/(img.naturalHeight||procH); sprites[k]=img; };
+    img.onload=()=>{ if(procH)img._scaleAdj=procH/(img.naturalHeight||procH); img._frames=cfg.frames||1; img._fps=cfg.fps||8; sprites[k]=img; };
     img.onerror=()=>{};                              // 실패 시 도트 폴백 유지
-    img.src=ART_BASE+ART[k];
+    img.src=ART_BASE+cfg.src;
   }
   tileImgs={};
   for(const k in ART_TILES){
@@ -637,8 +642,9 @@ function loadArt(){
 let sprites={};
 function hex(h){h=h.replace('#','');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
 function makeSprite(map,pal){ const h=map.length; let w=0; for(const r of map)w=Math.max(w,r.length); const cvS=document.createElement('canvas');cvS.width=w;cvS.height=h; const c=cvS.getContext('2d'); const img=c.createImageData(w,h); for(let y=0;y<h;y++)for(let x=0;x<w;x++){const ch=map[y][x]||'.';const col=pal[ch];const i=(y*w+x)*4;if(!col){img.data[i+3]=0;continue;}const rgb=hex(col);img.data[i]=rgb[0];img.data[i+1]=rgb[1];img.data[i+2]=rgb[2];img.data[i+3]=255;} c.putImageData(img,0,0); return cvS; }
-// PNG(HTMLImageElement)면 부드럽게, 도트 캔버스면 픽셀 그대로. _scaleAdj로 표시 크기 유지.
-function drawSprite(spr,cx,cy,scale,flip){ const adj=spr._scaleAdj||1; const w=spr.width*scale*adj,h=spr.height*scale*adj,dx=Math.round(cx-w/2),dy=Math.round(cy-h/2); const im=spr instanceof HTMLImageElement; if(im)ctx.imageSmoothingEnabled=true; if(flip){ctx.save();ctx.translate(dx+w,dy);ctx.scale(-1,1);ctx.drawImage(spr,0,0,w,h);ctx.restore();}else ctx.drawImage(spr,dx,dy,w,h); if(im)ctx.imageSmoothingEnabled=false; }
+// PNG면 부드럽게, 도트 캔버스면 픽셀 그대로. _scaleAdj로 표시 크기 유지.
+// frames>1 이면 가로 시트에서 clock 기준 프레임 1칸을 잘라 그림(9-arg drawImage: 캔버스·이미지 공통).
+function drawSprite(spr,cx,cy,scale,flip){ const adj=spr._scaleAdj||1; const frames=spr._frames||1; const sw=spr.width/frames, sh=spr.height; const w=sw*scale*adj,h=sh*scale*adj,dx=Math.round(cx-w/2),dy=Math.round(cy-h/2); const im=spr instanceof HTMLImageElement; let sx=0; if(frames>1){ const fps=spr._fps||8; sx=(Math.floor(clock/(1000/fps))%frames)*sw; } if(im)ctx.imageSmoothingEnabled=true; if(flip){ctx.save();ctx.translate(dx+w,dy);ctx.scale(-1,1);ctx.drawImage(spr,sx,0,sw,sh,0,0,w,h);ctx.restore();}else ctx.drawImage(spr,sx,0,sw,sh,dx,dy,w,h); if(im)ctx.imageSmoothingEnabled=false; }
 function buildSprites(){
   const P={
     grunt:{O:'#3a2d7a',B:'#CBC2FF',L:'#EDE9FF',D:'#8b7fd8',E:'#2a1f5c',W:'#ffffff'},
@@ -711,8 +717,8 @@ function stepFx(dt){
 
 function drawEnemy(e){
   const spr=sprites[e.type]; if(!spr)return;
-  const adj=spr._scaleAdj||1;
-  const cx=e.px, cyRaw=e.py, scale=2, sw=spr.width*scale*adj;
+  const adj=spr._scaleAdj||1, frames=spr._frames||1;
+  const cx=e.px, cyRaw=e.py, scale=2, sw=(spr.width/frames)*scale*adj;
   const bob = e.type==='runner' ? -Math.round(Math.abs(Math.sin(clock/90+e.seed))*2) : Math.round(Math.sin(clock/240+e.seed)*1.5);
   ctx.fillStyle='rgba(0,0,0,.26)';ctx.beginPath();ctx.ellipse(cx,cyRaw+sw*0.4,sw*0.32,sw*0.12,0,0,7);ctx.fill();
   const flip = e.type==='runner' && Math.cos(e.face||0)<0;
