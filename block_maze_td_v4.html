@@ -595,11 +595,50 @@ const MCOL={
 function hpbar(px,py,r){ if(r>=1)return; ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(px+4,py+CELL-5,CELL-8,3); ctx.fillStyle=r>.4?PAL.hp:PAL.hpLow;ctx.fillRect(px+4,py+CELL-5,(CELL-8)*r,3); }
 function rr(x,y,w,h,r){ if(ctx.roundRect){ctx.beginPath();ctx.roundRect(x,y,w,h,r);} else {ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();} }
 
+// ════════════════════════════════════════════════════════════════════
+// ★ 아트 에셋 교체 지점 (ART) ★
+//   assets/ 폴더에 아래 파일명으로 PNG를 넣으면 도트 아트를 자동 대체합니다.
+//   파일이 없으면(로드 실패 시) 기존 절차적 도트 스프라이트로 그대로 폴백합니다.
+//   → 리소스 교체는 이 ART/ART_TILES 객체와 assets/ 폴더만 건드리면 됩니다.
+//   자세한 규칙은 assets/README.md, 생성 프롬프트는 ART_PROMPTS.md 참고.
+// ════════════════════════════════════════════════════════════════════
+const ART_BASE='assets/';
+const ART={                 // 캐릭터/오브젝트 스프라이트 (투명 배경 PNG 권장)
+  grunt:  'enemy_grunt.png',
+  runner: 'enemy_runner.png',
+  swarm:  'enemy_swarm.png',
+  breaker:'enemy_breaker.png',
+  core:   'core.png',
+  gem:    'tower_gem.png',
+};
+const ART_TILES={           // 바닥 타일 (선택). 없으면 체커 컬러로 폴백
+  floorA:'floor_a.png',
+  floorB:'floor_b.png',
+};
+let tileImgs={};
+function loadArt(){
+  for(const k in ART){
+    const procH=sprites[k]?sprites[k].height:null;   // 도트 원본 높이 = 목표 표시 크기 기준
+    const img=new Image();
+    img.onload=()=>{ if(procH)img._scaleAdj=procH/(img.naturalHeight||procH); sprites[k]=img; };
+    img.onerror=()=>{};                              // 실패 시 도트 폴백 유지
+    img.src=ART_BASE+ART[k];
+  }
+  tileImgs={};
+  for(const k in ART_TILES){
+    const img=new Image();
+    img.onload=()=>{ tileImgs[k]=img; };
+    img.onerror=()=>{};
+    img.src=ART_BASE+ART_TILES[k];
+  }
+}
+
 // ── 픽셀 스프라이트 엔진 ──
 let sprites={};
 function hex(h){h=h.replace('#','');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
 function makeSprite(map,pal){ const h=map.length; let w=0; for(const r of map)w=Math.max(w,r.length); const cvS=document.createElement('canvas');cvS.width=w;cvS.height=h; const c=cvS.getContext('2d'); const img=c.createImageData(w,h); for(let y=0;y<h;y++)for(let x=0;x<w;x++){const ch=map[y][x]||'.';const col=pal[ch];const i=(y*w+x)*4;if(!col){img.data[i+3]=0;continue;}const rgb=hex(col);img.data[i]=rgb[0];img.data[i+1]=rgb[1];img.data[i+2]=rgb[2];img.data[i+3]=255;} c.putImageData(img,0,0); return cvS; }
-function drawSprite(spr,cx,cy,scale,flip){ const w=spr.width*scale,h=spr.height*scale,dx=Math.round(cx-w/2),dy=Math.round(cy-h/2); if(flip){ctx.save();ctx.translate(dx+w,dy);ctx.scale(-1,1);ctx.drawImage(spr,0,0,w,h);ctx.restore();}else ctx.drawImage(spr,dx,dy,w,h); }
+// PNG(HTMLImageElement)면 부드럽게, 도트 캔버스면 픽셀 그대로. _scaleAdj로 표시 크기 유지.
+function drawSprite(spr,cx,cy,scale,flip){ const adj=spr._scaleAdj||1; const w=spr.width*scale*adj,h=spr.height*scale*adj,dx=Math.round(cx-w/2),dy=Math.round(cy-h/2); const im=spr instanceof HTMLImageElement; if(im)ctx.imageSmoothingEnabled=true; if(flip){ctx.save();ctx.translate(dx+w,dy);ctx.scale(-1,1);ctx.drawImage(spr,0,0,w,h);ctx.restore();}else ctx.drawImage(spr,dx,dy,w,h); if(im)ctx.imageSmoothingEnabled=false; }
 function buildSprites(){
   const P={
     grunt:{O:'#3a2d7a',B:'#CBC2FF',L:'#EDE9FF',D:'#8b7fd8',E:'#2a1f5c',W:'#ffffff'},
@@ -672,14 +711,15 @@ function stepFx(dt){
 
 function drawEnemy(e){
   const spr=sprites[e.type]; if(!spr)return;
-  const cx=e.px, cyRaw=e.py, scale=2, sw=spr.width*scale;
+  const adj=spr._scaleAdj||1;
+  const cx=e.px, cyRaw=e.py, scale=2, sw=spr.width*scale*adj;
   const bob = e.type==='runner' ? -Math.round(Math.abs(Math.sin(clock/90+e.seed))*2) : Math.round(Math.sin(clock/240+e.seed)*1.5);
   ctx.fillStyle='rgba(0,0,0,.26)';ctx.beginPath();ctx.ellipse(cx,cyRaw+sw*0.4,sw*0.32,sw*0.12,0,0,7);ctx.fill();
   const flip = e.type==='runner' && Math.cos(e.face||0)<0;
   if(e.type==='runner'){ for(let i=0;i<e.trail.length;i++){const t=e.trail[i],aa=(i/e.trail.length)*0.3;ctx.save();ctx.globalAlpha=aa;drawSprite(spr,t.x,t.y+bob,scale,flip);ctx.restore();} }
   drawSprite(spr, cx, cyRaw+bob, scale, flip);
-  if(e.hitFlash>0){const hh=spr.height*scale;ctx.save();ctx.globalAlpha=Math.min(0.6,e.hitFlash/140*0.6);ctx.globalCompositeOperation='lighter';ctx.fillStyle='#ffffff';ctx.fillRect(cx-sw/2,cyRaw-hh/2+bob,sw,hh);ctx.restore();}
-  if(e.slowT>0){const hh=spr.height*scale;ctx.save();ctx.globalAlpha=0.22;ctx.fillStyle='#8ff0e0';ctx.fillRect(cx-sw/2,cyRaw-hh/2+bob,sw,hh);ctx.restore();}
+  if(e.hitFlash>0){const hh=spr.height*scale*adj;ctx.save();ctx.globalAlpha=Math.min(0.6,e.hitFlash/140*0.6);ctx.globalCompositeOperation='lighter';ctx.fillStyle='#ffffff';ctx.fillRect(cx-sw/2,cyRaw-hh/2+bob,sw,hh);ctx.restore();}
+  if(e.slowT>0){const hh=spr.height*scale*adj;ctx.save();ctx.globalAlpha=0.22;ctx.fillStyle='#8ff0e0';ctx.fillRect(cx-sw/2,cyRaw-hh/2+bob,sw,hh);ctx.restore();}
   const r=e.hp/e.max; if(r<1){const w=CELL*0.62,x=cx-w/2,y=cyRaw-sw*0.5-4;ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(x,y,w,3);ctx.fillStyle=r>.4?PAL.hp:PAL.hpLow;ctx.fillRect(x,y,w*r,3);}
 }
 function draw(){
@@ -690,7 +730,9 @@ function draw(){
   if(state.shake>0)ctx.translate((Math.random()-0.5)*state.shake,(Math.random()-0.5)*state.shake);
 
   // 바닥(체커 + 자갈·이끼·룬)
-  for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){ const px=x*CELL,py=y*CELL; ctx.fillStyle=((x+y)&1)?PAL.floorA:PAL.floorB; ctx.fillRect(px,py,CELL,CELL); const hsh=(x*37+y*101)%7; if(hsh===0){ctx.fillStyle='rgba(255,255,255,0.05)';ctx.fillRect(px+6,py+8,3,3);ctx.fillRect(px+9,py+8,2,2);} else if(hsh===3){ctx.fillStyle='rgba(0,0,0,0.14)';ctx.fillRect(px+CELL-11,py+CELL-9,4,2);ctx.fillRect(px+CELL-9,py+CELL-7,3,2);} else if(hsh===5){ctx.fillStyle='rgba(96,200,140,0.11)';ctx.fillRect(px+7,py+CELL-10,3,2);ctx.fillRect(px+9,py+CELL-8,2,2);ctx.fillRect(px+6,py+CELL-8,2,2);} if(((x*3+y*7)%11)===0){ctx.fillStyle=PAL.rune;ctx.fillRect(px+CELL/2-1,py+CELL/2-1,2,2);} }
+  for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){ const px=x*CELL,py=y*CELL; const timg=((x+y)&1)?tileImgs.floorA:tileImgs.floorB;
+    if(timg){ ctx.imageSmoothingEnabled=true; ctx.drawImage(timg,px,py,CELL,CELL); ctx.imageSmoothingEnabled=false; }
+    else { ctx.fillStyle=((x+y)&1)?PAL.floorA:PAL.floorB; ctx.fillRect(px,py,CELL,CELL); const hsh=(x*37+y*101)%7; if(hsh===0){ctx.fillStyle='rgba(255,255,255,0.05)';ctx.fillRect(px+6,py+8,3,3);ctx.fillRect(px+9,py+8,2,2);} else if(hsh===3){ctx.fillStyle='rgba(0,0,0,0.14)';ctx.fillRect(px+CELL-11,py+CELL-9,4,2);ctx.fillRect(px+CELL-9,py+CELL-7,3,2);} else if(hsh===5){ctx.fillStyle='rgba(96,200,140,0.11)';ctx.fillRect(px+7,py+CELL-10,3,2);ctx.fillRect(px+9,py+CELL-8,2,2);ctx.fillRect(px+6,py+CELL-8,2,2);} if(((x*3+y*7)%11)===0){ctx.fillStyle=PAL.rune;ctx.fillRect(px+CELL/2-1,py+CELL/2-1,2,2);} } }
   (function(){ const cx=(CORE.x+0.5)*CELL,cy=(CORE.y+0.5)*CELL; const g2=ctx.createRadialGradient(cx,cy,CELL*0.5,cx,cy,CELL*3.2); g2.addColorStop(0,'rgba(95,224,200,0.10)');g2.addColorStop(1,'rgba(95,224,200,0)'); ctx.fillStyle=g2; ctx.fillRect(cx-CELL*3.2,cy-CELL*3.2,CELL*6.4,CELL*6.4); })();
   ctx.strokeStyle=PAL.gridLine;ctx.lineWidth=1;
   for(let i=0;i<=COLS;i++){ctx.beginPath();ctx.moveTo(i*CELL,0);ctx.lineTo(i*CELL,H);ctx.stroke();}
@@ -809,7 +851,7 @@ function flash(title,text,cls,reload){
 }
 
 // ── 시작 ──
-buildSprites();initGrid();computeField();initTray();updateStats();updateNextWaveCard();
+buildSprites();loadArt();initGrid();computeField();initTray();updateStats();updateNextWaveCard();
 requestAnimationFrame(loop);
 </script>
 </body>
